@@ -10,18 +10,14 @@ return [
     // Título exibido no topo da página
     'site_title' => 'CMDB',
 
-    // Nome do item CLUSTER usado só na criação, se a API não informar o nome
-    // (ex.: node standalone, sem cluster configurado)
-    'cluster_fallback' => 'PVE AVATO DR',
-
-    // OPCIONAL: força o nome do cluster. Se definido, o item CLUSTER existente é
-    // renomeado para este valor na próxima coleta (ICONF preservado, histórico registrado).
-    // Útil quando o Proxmox é standalone ou a API não devolve o nome.
-    // 'cluster_nome' => 'PVE AVATO DR',
-
-    // Pasta onde o coletor grava o CSV/JSON e o log (gravável pelo www-data)
+    // Pasta onde o coletor grava o CSV/JSON de cada ambiente, o log e o status (gravável pelo www-data)
     'data_dir' => '/var/lib/cmdb',
 
-    // Nome do arquivo JSON gerado pelo script de coleta
-    'json_name' => 'IVELOZ2026.json',
+    // Chave que cifra (AES-256-GCM) os tokens dos ambientes cadastrados na tela "Ambientes".
+    // Gere com:  php -r 'echo base64_encode(random_bytes(32)), "\n";'
+    // GUARDE UMA CÓPIA: sem ela os tokens já cadastrados não podem ser lidos (teria de recadastrá-los).
+    'chave_cifra' => '',
+
+    // Os ambientes são cadastrados na tela "Ambientes" (ficam no banco, token cifrado).
+    // Opcionalmente ainda funcionam arquivos em /etc/cmdb/ambientes/<slug>.env (bin/ambiente-add.sh).
 ];

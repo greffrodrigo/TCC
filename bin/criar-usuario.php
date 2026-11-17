@@ -33,8 +33,8 @@ if (strlen($senha) < 10) {
 
 $hash = password_hash($senha, PASSWORD_DEFAULT);
 $st = db()->prepare(
-    'INSERT INTO usuario (nome, login, senha_hash, perfil) VALUES (?,?,?,?)
-     ON DUPLICATE KEY UPDATE nome = VALUES(nome), senha_hash = VALUES(senha_hash), perfil = VALUES(perfil)'
+    'INSERT INTO usuario (nome, login, senha_hash, perfil, ativo) VALUES (?,?,?,?,1)
+     ON DUPLICATE KEY UPDATE nome = VALUES(nome), senha_hash = VALUES(senha_hash), perfil = VALUES(perfil), ativo = 1'
 );
 $st->execute([$nome, $login, $hash, $perfil]);
 echo "Usuário '$login' ($perfil) gravado.\n";

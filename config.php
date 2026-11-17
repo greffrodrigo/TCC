@@ -6,6 +6,7 @@ return [
     'db_pass'  => 'C025ru477@!',
 
     'timezone' => 'America/Sao_Paulo',
+    'chave_cifra' => 'eRLpbXq9c1YfsZhIxiXVMeyvSim0TuNux+T84T14ApU=',
 
     // Título exibido no topo da página
     'site_title' => 'CMDB',

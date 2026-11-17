@@ -97,3 +97,34 @@ tr.inativo td { opacity: .55; }
   td, th { padding: 10px 12px; }
   .topbar { padding: 10px 12px; }
 }
+
+/* ---- navegação, formulários e telas de administração ---- */
+.topbar { flex-wrap: wrap; }
+.nav { display: flex; gap: 4px; margin-right: auto; margin-left: 28px; }
+.nav-link { padding: 7px 14px; border-radius: 8px; color: var(--muted); font-weight: 600; }
+.nav-link:hover { background: var(--bg); text-decoration: none; }
+.nav-link.ativo { background: var(--blue-bg); color: var(--blue); }
+.page-title { font-size: 22px; margin: 4px 0 16px; }
+.sec-title { font-size: 16px; margin: 0 0 14px; }
+.alert.ok { background: var(--green-bg); border-color: #b9e9d6; color: var(--green); }
+.alert pre.code { background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 8px 0; overflow-x: auto; }
+code { background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 0 5px; font-size: 12px; }
+.badge { display: inline-block; border-radius: 999px; padding: 2px 11px; font-size: 11px; font-weight: 700; border: 1px solid transparent; }
+.b-ok { background: var(--green-bg); color: var(--green); border-color: #b9e9d6; }
+.b-off, .b-err { background: var(--red-bg); color: var(--red); border-color: #f2c4c4; }
+.b-gray { background: #eceff5; color: #4a5368; }
+.b-dark { background: var(--dark); color: #fff; }
+.msg-coleta { color: var(--muted); }
+.acoes { white-space: nowrap; text-align: right; }
+.acoes .btn { margin-left: 4px; }
+.form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px 20px; align-items: start; }
+.form-grid.one { grid-template-columns: 1fr; }
+.form-grid label { display: grid; gap: 5px; font-weight: 600; }
+.form-grid label small { font-weight: 400; }
+.form-grid input:not([type=checkbox]), .form-grid select { padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; font: inherit; background: var(--bg); color: var(--text); width: 100%; }
+.form-grid input:disabled { opacity: .6; }
+.form-grid label.check { display: flex; align-items: center; gap: 8px; padding-top: 26px; }
+.form-actions { grid-column: 1 / -1; display: flex; gap: 10px; }
+.note { margin: 16px 0 0; font-size: 12px; }
+.card.narrow { max-width: 460px; }
+@media (max-width: 720px) { .nav { margin-left: 0; width: 100%; order: 3; } }

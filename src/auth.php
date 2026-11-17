@@ -18,10 +18,30 @@ function sessao(): void
     }
 }
 
+/**
+ * Usuário logado. A cada requisição confere no banco se ele continua ativo e atualiza
+ * nome e perfil: desativar ou rebaixar um usuário vale na hora, mesmo com a sessão aberta.
+ */
 function usuario_atual(): ?array
 {
+    static $cache = false;
     sessao();
-    return $_SESSION['usuario'] ?? null;
+    $id = (int)($_SESSION['usuario']['id'] ?? 0);
+    if ($id <= 0) {
+        return null;
+    }
+    if ($cache !== false && ($cache['id'] ?? 0) === $id) {
+        return $cache;
+    }
+    $st = db()->prepare('SELECT id, nome, perfil FROM usuario WHERE id = ? AND ativo = 1');
+    $st->execute([$id]);
+    $u = $st->fetch();
+    if (!$u) {
+        unset($_SESSION['usuario']);
+        return $cache = null;
+    }
+    $_SESSION['usuario'] = ['id' => (int)$u['id'], 'nome' => (string)$u['nome'], 'perfil' => (string)$u['perfil']];
+    return $cache = $_SESSION['usuario'];
 }
 
 function exigir_login(): array

@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require __DIR__ . '/../src/auth.php';
+require_once __DIR__ . '/../src/layout.php';
 
 $user = exigir_login();
 $pdo  = db();
@@ -45,13 +46,19 @@ $avisoInacessivel = null;
 $arqStatus = (cfg()['data_dir'] ?? '') . '/status.json';
 if (is_readable($arqStatus)) {
     $js = json_decode((string)file_get_contents($arqStatus), true);
-    if (is_array($js) && ($js['estado'] ?? '') === 'inacessivel') {
+    $estadoUltima = is_array($js) ? ($js['estado'] ?? '') : '';
+    // inacessivel = todos os ambientes sem resposta; parcial = alguns ambientes falharam
+    if (in_array($estadoUltima, ['inacessivel', 'parcial'], true)) {
         try {
             $quando = (new DateTime((string)($js['atualizado_em'] ?? 'now')))->format('d/m/Y H:i:s');
         } catch (Throwable) {
             $quando = '';
         }
-        $avisoInacessivel = 'Ambiente Inacessível para coleta' . ($quando !== '' ? ' (tentativa em ' . $quando . ')' : '');
+        $texto = (string)($js['mensagem'] ?? '') !== '' ? (string)$js['mensagem'] : 'Ambiente Inacessível para coleta';
+        if ($estadoUltima === 'parcial') {
+            $texto = 'Coleta parcial. ' . $texto;
+        }
+        $avisoInacessivel = $texto . ($quando !== '' ? ' (tentativa em ' . $quando . ')' : '');
     }
 }
 
@@ -89,8 +96,10 @@ function status_html(?string $st, ?string $dias): string
 <body>
 <header class="topbar">
   <div class="brand"><span class="logo">&#9638;</span> <?= h($titulo) ?></div>
+  <?= nav_html($user, 'cmdb') ?>
   <div class="userbox">
     <div><strong><?= h($user['nome']) ?></strong><br><small class="muted"><?= h($user['perfil']) ?></small></div>
+    <a class="btn btn-sm" href="minha-senha.php">Alterar senha</a>
     <a class="btn btn-danger-outline" href="logout.php">Sair</a>
   </div>
 </header>
@@ -98,7 +107,7 @@ function status_html(?string $st, ?string $dias): string
 <main class="container">
   <div class="toolbar">
     <?php if ($ehAdmin): ?>
-      <button id="btnAtualizar" class="btn btn-primary" type="button">&#8635; Atualizar Dados</button>
+      <button id="btnAtualizar" class="btn btn-primary btn-atualizar" type="button" title="Atualiza todos os ambientes, um após o outro">&#8635; Atualizar Dados</button>
     <?php else: ?>
       <span></span>
     <?php endif; ?>
@@ -117,6 +126,9 @@ function status_html(?string $st, ?string $dias): string
         <strong><?= h($cl['nome']) ?></strong>
         <span class="iconf"><?= h($cl['iconf']) ?></span>
         <a class="btn btn-sm" href="historico.php?id=<?= $cl['id'] ?>">Histórico</a>
+        <?php if ($ehAdmin && preg_match('/^[a-z0-9][a-z0-9_-]*$/', (string)$cl['chave_origem'])): ?>
+          <button class="btn btn-sm btn-atualizar" type="button" data-amb="<?= h($cl['chave_origem']) ?>" title="Atualizar somente este ambiente">&#8635; Atualizar este ambiente</button>
+        <?php endif; ?>
       </div>
 
       <?php foreach (($nodesPorCluster[$cl['id']] ?? []) as $nd):
@@ -192,7 +204,9 @@ function status_html(?string $st, ?string $dias): string
 <?php if ($ehAdmin): ?>
 <script>
 (function () {
-  var btn = document.getElementById('btnAtualizar');
+  var btns = Array.prototype.slice.call(document.querySelectorAll('.btn-atualizar'));
+  var btnGeral = document.getElementById('btnAtualizar');
+  function trava(sim) { btns.forEach(function (b) { b.disabled = sim; }); }
   var msg = document.getElementById('msgColeta');
   var csrf = document.querySelector('meta[name="csrf"]').content;
   var timer = null;
@@ -210,8 +224,8 @@ function status_html(?string $st, ?string $dias): string
       .then(function (r) { return r.json(); })
       .then(function (s) {
         if (s.estado === 'executando') {
-          btn.disabled = true;
-          btn.textContent = 'Coletando...';
+          trava(true);
+          if (btnGeral) { btnGeral.textContent = 'Coletando...'; }
           mostra(s.mensagem || 'Coleta em andamento');
           return;
         }
@@ -221,8 +235,8 @@ function status_html(?string $st, ?string $dias): string
         }
         inicioColeta = 0;
         clearInterval(timer); timer = null;
-        btn.disabled = false;
-        btn.innerHTML = '&#8635; Atualizar Dados';
+        trava(false);
+        if (btnGeral) { btnGeral.innerHTML = '&#8635; Atualizar Dados'; }
         if (s.estado === 'ok') {
           mostra('Coleta concluída: ' + s.mensagem);
           if (sessionStorage.getItem('coletaPendente')) {
@@ -231,7 +245,12 @@ function status_html(?string $st, ?string $dias): string
           }
         } else if (s.estado === 'inacessivel') {
           sessionStorage.removeItem('coletaPendente');
-          mostra('Ambiente Inacessível para coleta', true);
+          mostra(s.mensagem || 'Ambiente Inacessível para coleta', true);
+        } else if (s.estado === 'parcial') {
+          // alguns ambientes atualizaram, outros não: mostra o aviso e recarrega para exibir o que entrou
+          sessionStorage.removeItem('coletaPendente');
+          mostra('Coleta parcial. ' + (s.mensagem || ''), true);
+          setTimeout(function () { location.reload(); }, 2500);
         } else if (s.estado === 'erro') {
           sessionStorage.removeItem('coletaPendente');
           mostra(s.mensagem || 'Erro na coleta', true);
@@ -240,12 +259,15 @@ function status_html(?string $st, ?string $dias): string
       .catch(function () {});
   }
 
-  btn.addEventListener('click', function () {
-    btn.disabled = true;
-    fetch('atualizar.php', {method: 'POST', headers: {'X-CSRF-Token': csrf}})
+  // amb vazio = todos os ambientes em sequência; com valor = só aquele ambiente
+  function iniciar(amb) {
+    trava(true);
+    var corpo = new URLSearchParams();
+    if (amb) { corpo.set('ambiente', amb); }
+    fetch('atualizar.php', {method: 'POST', headers: {'X-CSRF-Token': csrf}, body: corpo})
       .then(function (r) { return r.json(); })
       .then(function (j) {
-        if (!j.ok) { btn.disabled = false; mostra(j.mensagem, true); return; }
+        if (!j.ok) { trava(false); mostra(j.mensagem, true); return; }
         try { sessionStorage.setItem('coletaPendente', '1'); } catch (e) {}
         mostra(j.mensagem);
         inicioColeta = j.iniciado_em ? Date.parse(j.iniciado_em) : 0;
@@ -253,7 +275,10 @@ function status_html(?string $st, ?string $dias): string
         if (!timer) { timer = setInterval(checa, 3000); }
         setTimeout(checa, 1000);
       })
-      .catch(function () { btn.disabled = false; mostra('Falha ao iniciar a coleta', true); });
+      .catch(function () { trava(false); mostra('Falha ao iniciar a coleta', true); });
+  }
+  btns.forEach(function (b) {
+    b.addEventListener('click', function () { iniciar(b.getAttribute('data-amb') || ''); });
   });
 
   // se já existe coleta rodando ao abrir a página, passa a acompanhar

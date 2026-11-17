@@ -77,6 +77,7 @@ final class Importador
 {
     private PDO $pdo;
     private int $coletaId = 0;
+    private int $clusterId = 0;   // cluster (ambiente) que está sendo importado
     public int $criados = 0;
     public int $alterados = 0;
     public int $inativados = 0;
@@ -88,8 +89,14 @@ final class Importador
     }
 
     /** @return array{coleta_id:int,criados:int,alterados:int,inativados:int,lidos:int} */
-    public function importar(array $json, string $clusterFallback, ?string $clusterNomeFixo = null): array
+    public function importar(array $json, string $slug, ?string $clusterNomeFixo = null): array
     {
+        $slug = trim($slug);
+        if ($slug === '') {
+            throw new InvalidArgumentException('Identificador do ambiente (slug) não informado.');
+        }
+        $this->criados = $this->alterados = $this->inativados = $this->lidos = 0;
+
         if (!isset($json['nodes']) || !is_array($json['nodes']) || count($json['nodes']) === 0) {
             throw new InvalidArgumentException('JSON inválido ou sem nodes: importação abortada para não inativar itens por engano.');
         }
@@ -114,12 +121,14 @@ final class Importador
             $nodesFalha = [];   // ids de nodes que não responderam
 
             // ---- CLUSTER ----
-            // Precedência do nome: config (cluster_nome) > nome vindo da API > nome já gravado > fallback.
-            // Há um único item CLUSTER por instalação: mudou o nome => renomeia (mesmo ICONF).
+            // Cada ambiente tem um item CLUSTER próprio, identificado pelo slug (chave_origem).
+            // Precedência do nome: AMBIENTE_NOME do arquivo do ambiente > nome vindo da API >
+            // nome já gravado > o próprio slug. Mudou o nome => renomeia (mesmo ICONF).
             $nomeApi = trim((string)($json['cluster']['name'] ?? ''));
             $nomeFixo = trim((string)$clusterNomeFixo);
             $nomeConhecido = $nomeFixo !== '' ? $nomeFixo : $nomeApi;
-            $clusterId = $this->garantirCluster($nomeConhecido, $clusterFallback);
+            $clusterId = $this->garantirCluster($slug, $nomeConhecido);
+            $this->clusterId = $clusterId;
             $vistos[$clusterId] = true;
             $this->lidos++;
 
@@ -171,9 +180,15 @@ final class Importador
             }
 
             // ---- Itens que sumiram da coleta => inativos (nunca removidos) ----
-            $rows = $this->pdo->query(
-                "SELECT id, pai_id, ativo FROM iconf_item WHERE tipo IN ('NODE','VM','CT')"
-            )->fetchAll();
+            // Só os itens DESTE ambiente: nodes do cluster e VMs/CTs desses nodes.
+            $st = $this->pdo->prepare(
+                "SELECT i.id, i.pai_id, i.ativo FROM iconf_item i
+                  WHERE (i.tipo = 'NODE' AND i.pai_id = ?)
+                     OR (i.tipo IN ('VM','CT') AND i.pai_id IN
+                           (SELECT n.id FROM iconf_item n WHERE n.tipo = 'NODE' AND n.pai_id = ?))"
+            );
+            $st->execute([$clusterId, $clusterId]);
+            $rows = $st->fetchAll();
             foreach ($rows as $r) {
                 $id = (int)$r['id'];
                 if (isset($vistos[$id])) {
@@ -219,22 +234,24 @@ final class Importador
     }
 
     /**
-     * Item CLUSTER único. Sem nome conhecido (API não informou) mantém o nome atual;
+     * Item CLUSTER do ambiente (chave_origem = slug, que nunca muda).
+     * Sem nome conhecido (API não informou) mantém o nome atual, ou usa o slug ao criar;
      * com nome conhecido e diferente, renomeia o item existente (ICONF preservado, histórico registrado).
      */
-    private function garantirCluster(string $nomeConhecido, string $fallback): int
+    private function garantirCluster(string $slug, string $nomeConhecido): int
     {
-        $item = $this->pdo->query("SELECT * FROM iconf_item WHERE tipo = 'CLUSTER' ORDER BY id LIMIT 1")->fetch();
+        $st = $this->pdo->prepare("SELECT * FROM iconf_item WHERE tipo = 'CLUSTER' AND chave_origem = ? LIMIT 1");
+        $st->execute([$slug]);
+        $item = $st->fetch();
         if (!$item) {
-            $nome = $nomeConhecido !== '' ? $nomeConhecido : $fallback;
-            return $this->garantirItem('CLUSTER', $nome, $nome, null);
+            $nome = $nomeConhecido !== '' ? $nomeConhecido : $slug;
+            return $this->garantirItem('CLUSTER', $slug, $nome, null);
         }
 
         $id = (int)$item['id'];
         $mudou = false;
         if ($nomeConhecido !== '' && $item['nome'] !== $nomeConhecido) {
-            $this->pdo->prepare('UPDATE iconf_item SET nome = ?, chave_origem = ? WHERE id = ?')
-                ->execute([$nomeConhecido, $nomeConhecido, $id]);
+            $this->pdo->prepare('UPDATE iconf_item SET nome = ? WHERE id = ?')->execute([$nomeConhecido, $id]);
             $this->historico($id, 'nome', $item['nome'], $nomeConhecido);
             $mudou = true;
         }
@@ -253,8 +270,12 @@ final class Importador
     private function garantirItem(string $tipo, string $chave, string $nome, ?int $paiId): int
     {
         if ($tipo === 'VM' || $tipo === 'CT') {
-            $st = $this->pdo->prepare("SELECT * FROM iconf_item WHERE tipo IN ('VM','CT') AND chave_origem = ? LIMIT 1");
-            $st->execute([$chave]);
+            // o vmid só é único dentro do ambiente: procura entre as VMs/CTs dos nodes deste cluster
+            $st = $this->pdo->prepare(
+                "SELECT g.* FROM iconf_item g JOIN iconf_item n ON n.id = g.pai_id
+                  WHERE g.tipo IN ('VM','CT') AND g.chave_origem = ? AND n.pai_id = ? LIMIT 1"
+            );
+            $st->execute([$chave, $this->clusterId]);
         } elseif ($tipo === 'NODE') {
             $st = $this->pdo->prepare("SELECT * FROM iconf_item WHERE tipo = 'NODE' AND chave_origem = ? AND pai_id <=> ? LIMIT 1");
             $st->execute([$chave, $paiId]);

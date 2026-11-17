@@ -15,7 +15,7 @@ if [[ -z "$PVE_HOST" || -z "$PVE_USER" || -z "$PVE_TOKEN" ]]; then
     exit 1
 fi
 
-API_URL="https://$PVE_HOST:8006/api2/json"
+API_URL="https://$PVE_HOST:${PVE_PORT:-8006}/api2/json"
 CSV_FILE="${CSV_FILE:-IVELOZ2026.csv}"
 
 # === Limites de tempo ===

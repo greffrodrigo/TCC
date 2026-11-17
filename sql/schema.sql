@@ -15,9 +15,34 @@ CREATE TABLE IF NOT EXISTS usuario (
   login         VARCHAR(60)  NOT NULL,
   senha_hash    VARCHAR(255) NOT NULL,
   perfil        ENUM('ADMIN','LEITOR') NOT NULL DEFAULT 'LEITOR',
+  ativo         TINYINT(1) NOT NULL DEFAULT 1,   -- usuário não é removido: só desativado
   criado_em     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uq_usuario_login (login)
+) ENGINE=InnoDB;
+
+-- ---------------------------------------------------------------------------
+-- Ambientes (Proxmox) cadastrados na tela. O token fica CIFRADO (AES-256-GCM);
+-- a chave está no config.php, fora do banco. Ambiente não é removido: só desativado.
+-- slug = identificador estável do ambiente (liga ao item CLUSTER do CMDB); não muda.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS ambiente (
+  id            INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  slug          VARCHAR(60)  NOT NULL,
+  nome          VARCHAR(120) NOT NULL,
+  host          VARCHAR(190) NOT NULL,
+  porta         SMALLINT UNSIGNED NOT NULL DEFAULT 8006,
+  usuario_api   VARCHAR(190) NOT NULL,           -- usuario@realm!nome-do-token
+  token_cifrado TEXT NOT NULL,
+  ordem         INT NOT NULL DEFAULT 100,        -- ordem da coleta (menor primeiro)
+  ativo         TINYINT(1) NOT NULL DEFAULT 1,
+  ultimo_estado    VARCHAR(20)  NULL,            -- ok | erro | inacessivel (última coleta deste ambiente)
+  ultima_mensagem  VARCHAR(500) NULL,
+  ultima_coleta_em DATETIME NULL,
+  criado_em     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  atualizado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_ambiente_slug (slug)
 ) ENGINE=InnoDB;
 
 -- ---------------------------------------------------------------------------
@@ -145,6 +170,31 @@ BEGIN
   END IF;
   IF NEW.tipo <> OLD.tipo THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'CMDB: tipo do item nao pode ser alterado';
+  END IF;
+END//
+
+-- Usuários e ambientes também não são removidos (apenas desativados)
+DROP TRIGGER IF EXISTS trg_usuario_no_delete//
+CREATE TRIGGER trg_usuario_no_delete BEFORE DELETE ON usuario
+FOR EACH ROW
+BEGIN
+  SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'CMDB: usuarios nao podem ser removidos (desative-os)';
+END//
+
+DROP TRIGGER IF EXISTS trg_ambiente_no_delete//
+CREATE TRIGGER trg_ambiente_no_delete BEFORE DELETE ON ambiente
+FOR EACH ROW
+BEGIN
+  SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'CMDB: ambientes nao podem ser removidos (desative-os)';
+END//
+
+-- O slug do ambiente nunca muda (é ele que liga o ambiente ao item CLUSTER)
+DROP TRIGGER IF EXISTS trg_ambiente_slug_imutavel//
+CREATE TRIGGER trg_ambiente_slug_imutavel BEFORE UPDATE ON ambiente
+FOR EACH ROW
+BEGIN
+  IF NEW.slug <> OLD.slug THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'CMDB: slug do ambiente nao pode ser alterado';
   END IF;
 END//
 

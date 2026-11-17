@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require __DIR__ . '/../src/auth.php';
+require_once __DIR__ . '/../src/layout.php';
 
 $user = exigir_login();
 $pdo  = db();
@@ -48,8 +49,10 @@ $dt = fn(?string $s) => $s ? (new DateTime($s))->format('d/m/Y H:i:s') : '-';
 <body>
 <header class="topbar">
   <div class="brand"><span class="logo">&#9638;</span> <?= h($titulo) ?></div>
+  <?= nav_html($user, 'cmdb') ?>
   <div class="userbox">
     <div><strong><?= h($user['nome']) ?></strong><br><small class="muted"><?= h($user['perfil']) ?></small></div>
+    <a class="btn btn-sm" href="minha-senha.php">Alterar senha</a>
     <a class="btn btn-danger-outline" href="logout.php">Sair</a>
   </div>
 </header>

@@ -45,5 +45,13 @@ if (!$script) {
 }
 
 // Dispara em segundo plano; a página acompanha por status.php
-exec('setsid nohup ' . escapeshellarg($script) . ' > /dev/null 2>&1 &');
+// ambiente opcional: sem ele, atualiza todos em sequência
+$amb = trim((string)($_POST['ambiente'] ?? ''));
+if ($amb !== '' && !preg_match('/^[a-z0-9][a-z0-9_-]*$/', $amb)) {
+    http_response_code(400);
+    echo json_encode(['ok' => false, 'mensagem' => 'Ambiente inválido']);
+    exit;
+}
+
+exec('setsid nohup ' . escapeshellarg($script) . ($amb !== '' ? ' ' . escapeshellarg($amb) : '') . ' > /dev/null 2>&1 &');
 echo json_encode(['ok' => true, 'mensagem' => 'Coleta iniciada', 'iniciado_em' => date('c')]);

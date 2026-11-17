@@ -2,8 +2,10 @@
 declare(strict_types=1);
 
 /**
- * Importa um JSON de coleta para o CMDB.
- * Uso: php bin/importar.php /var/lib/cmdb/IVELOZ2026.json
+ * Importa o JSON de coleta de UM ambiente para o CMDB.
+ * Uso: php bin/importar.php <arquivo.json> <slug-do-ambiente> ["Nome do cluster"]
+ *   slug  = nome do arquivo do ambiente em /etc/cmdb/ambientes (sem .env); identifica o cluster no banco
+ *   nome  = (opcional) força o nome do cluster; vem de AMBIENTE_NOME no arquivo do ambiente
  */
 if (PHP_SAPI !== 'cli') {
     http_response_code(404);
@@ -14,18 +16,20 @@ require dirname(__DIR__) . '/src/db.php';
 require dirname(__DIR__) . '/src/importer.php';
 
 $arquivo = $argv[1] ?? '';
-if ($arquivo === '' || !is_readable($arquivo)) {
-    fwrite(STDERR, "Uso: php importar.php <arquivo.json>\n");
+$slug    = $argv[2] ?? '';
+$nome    = ($argv[3] ?? '') !== '' ? $argv[3] : null;
+if ($arquivo === '' || $slug === '' || !is_readable($arquivo)) {
+    fwrite(STDERR, "Uso: php importar.php <arquivo.json> <slug-do-ambiente> [\"Nome do cluster\"]\n");
+    exit(1);
+}
+if (!preg_match('/^[a-z0-9][a-z0-9_-]*$/', $slug)) {
+    fwrite(STDERR, "Slug inválido (use letras minúsculas, números, _ e -).\n");
     exit(1);
 }
 
 try {
     $json = json_decode((string)file_get_contents($arquivo), true, 512, JSON_THROW_ON_ERROR);
-    $r = (new Importador(db()))->importar(
-        $json,
-        cfg()['cluster_fallback'] ?? 'CLUSTER',
-        cfg()['cluster_nome'] ?? null
-    );
+    $r = (new Importador(db()))->importar($json, $slug, $nome);
     printf(
         "Coleta #%d importada: %d lidos, %d criados, %d alterados, %d inativados\n",
         $r['coleta_id'], $r['lidos'], $r['criados'], $r['alterados'], $r['inativados']

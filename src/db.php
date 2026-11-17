@@ -28,9 +28,11 @@ function db(): PDO
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             PDO::ATTR_EMULATE_PREPARES   => false,
         ]);
-        // Mantém o horário do banco igual ao horário do PHP
-        $off = (new DateTime('now'))->format('P');
-        $pdo->exec("SET time_zone = '" . $off . "'");
+        // Mantém o horário do banco igual ao horário do PHP (só MariaDB/MySQL)
+        if ($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql') {
+            $off = (new DateTime('now'))->format('P');
+            $pdo->exec("SET time_zone = '" . $off . "'");
+        }
     }
     return $pdo;
 }
