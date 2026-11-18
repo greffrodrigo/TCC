@@ -1,11 +1,6 @@
 <?php
 declare(strict_types=1);
 
-/**
- * Agendamento das coletas (tela Ambientes). A programação fica no banco; uma única linha
- * fixa no cron do sistema chama bin/agendador.php a cada minuto e ele decide se é hora.
- * Modos: desligado | 30min (a cada 30 minutos, em :00 e :30) | diario (uma vez ao dia, em "hora").
- */
 require_once __DIR__ . '/db.php';
 
 const AGENDA_MODOS = ['desligado', '30min', 'diario'];
@@ -22,7 +17,6 @@ function agendamento_obter(PDO $pdo): array
     return $r;
 }
 
-/** Último horário programado que já passou (ou é agora); null se desligado. */
 function agendamento_slot_atual(string $modo, string $hora, DateTime $agora): ?DateTime
 {
     if ($modo === '30min') {
@@ -41,7 +35,6 @@ function agendamento_slot_atual(string $modo, string $hora, DateTime $agora): ?D
     return null;
 }
 
-/** Próxima execução prevista; null se desligado. */
 function agendamento_proximo(string $modo, string $hora, DateTime $agora): ?DateTime
 {
     $s = agendamento_slot_atual($modo, $hora, $agora);
@@ -53,7 +46,6 @@ function agendamento_proximo(string $modo, string $hora, DateTime $agora): ?Date
     return $p;
 }
 
-/** Salva a programação. Não dispara coleta na hora: a próxima execução é a do próximo horário. */
 function agendamento_salvar(PDO $pdo, string $modo, string $hora, ?DateTime $agora = null): array
 {
     $agora ??= new DateTime('now');
@@ -78,7 +70,6 @@ function agendamento_salvar(PDO $pdo, string $modo, string $hora, ?DateTime $ago
     }];
 }
 
-/** Reserva o horário de forma atômica; false se outra execução já o pegou. */
 function agendamento_reservar(PDO $pdo, string $slot): bool
 {
     $st = $pdo->prepare('UPDATE agendamento SET ultimo_slot = ? WHERE id = 1 AND (ultimo_slot IS NULL OR ultimo_slot < ?)');

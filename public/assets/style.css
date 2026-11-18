@@ -99,7 +99,6 @@ tr.inativo td { opacity: .55; }
   .topbar { padding: 10px 12px; }
 }
 
-/* ---- navegação, formulários e telas de administração ---- */
 .topbar { flex-wrap: wrap; }
 .nav { display: flex; gap: 4px; margin-right: auto; margin-left: 28px; }
 .nav-link { padding: 7px 14px; border-radius: 8px; color: var(--muted); font-weight: 600; }

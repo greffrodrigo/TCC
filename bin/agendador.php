@@ -1,11 +1,6 @@
 <?php
 declare(strict_types=1);
 
-/**
- * Chamado pelo cron a cada minuto (uma linha fixa, ver cron/cmdb.cron).
- * Lê o agendamento gravado na tela Ambientes e, se chegou a hora, executa bin/coletar.sh
- * (todos os ambientes ativos, em sequência). Seguro rodar a cada minuto: só coleta uma vez por horário.
- */
 if (PHP_SAPI !== 'cli') {
     http_response_code(404);
     exit;
@@ -17,19 +12,19 @@ $log = fn(string $m) => print('[' . date('Y-m-d H:i:s') . "] $m\n");
 try {
     $pdo = db();
     $agora = new DateTime('now');
-    $a = agendamento_obter($pdo);      // garante que a linha existe
+    $a = agendamento_obter($pdo);
     agendamento_pulso($pdo, $agora);
     $slot = agendamento_slot_atual((string)$a['modo'], (string)$a['hora'], $agora);
     if ($slot === null) {
-        exit(0);                       // desligado
+        exit(0);
     }
     $anterior = $a['ultimo_slot'];
     if ($anterior !== null && new DateTime((string)$anterior) >= $slot) {
-        exit(0);                       // este horário já foi atendido
+        exit(0);
     }
     $slotTxt = $slot->format(AGENDA_FMT);
     if (!agendamento_reservar($pdo, $slotTxt)) {
-        exit(0);                       // outra execução do agendador pegou este horário
+        exit(0);
     }
 
     $script = getenv('CMDB_COLETAR') ?: __DIR__ . '/coletar.sh';
@@ -37,7 +32,6 @@ try {
     exec(escapeshellarg($script) . ' >/dev/null 2>&1', $saida, $rc);
 
     if ($rc === 3) {
-        // já havia uma coleta em andamento: devolve o horário e tenta de novo no próximo minuto
         agendamento_devolver($pdo, $slotTxt, $anterior !== null ? (string)$anterior : null);
         $log('Coleta em andamento; nova tentativa no próximo minuto.');
         exit(0);

@@ -18,10 +18,6 @@ function sessao(): void
     }
 }
 
-/**
- * Usuário logado. A cada requisição confere no banco se ele continua ativo e atualiza
- * nome e perfil: desativar ou rebaixar um usuário vale na hora, mesmo com a sessão aberta.
- */
 function usuario_atual(): ?array
 {
     static $cache = false;

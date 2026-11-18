@@ -6,7 +6,6 @@ $user = exigir_login();
 $pdo  = db();
 $q = trim((string)($_GET['q'] ?? ''));
 
-// Todos os itens (poucos): serve para montar o caminho Cluster > Node de cada resultado
 $itens = [];
 foreach ($pdo->query('SELECT id, iconf, tipo, chave_origem, nome, pai_id, ativo FROM iconf_item')->fetchAll() as $r) {
     $itens[(int)$r['id']] = $r;
@@ -21,7 +20,6 @@ if ($q !== '') {
     $st->execute([$like, $like, $like]);
     $ids = array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
 
-    // "ICONF-000012", "iconf12" ou só "12" => o ICONF exato vem primeiro
     if (preg_match('/^(?:iconf-?)?0*(\d{1,9})$/i', $q, $m)) {
         $alvo = sprintf('ICONF-%06d', (int)$m[1]);
         foreach ($itens as $it) {
@@ -32,8 +30,6 @@ if ($q !== '') {
             }
         }
     }
-    // termo no formato ICONF (ex.: ICONF-000003 ou iconf-3) com um único resultado: abre o histórico direto.
-    // Um número puro (ex.: 12) mostra a lista, porque também pode ser um VMID.
     if ($exato !== null && count($ids) === 1 && preg_match('/^iconf/i', $q)) {
         redirecionar('historico.php?id=' . $exato);
     }

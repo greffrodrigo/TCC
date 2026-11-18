@@ -3,7 +3,7 @@ declare(strict_types=1);
 require __DIR__ . '/../src/layout.php';
 require __DIR__ . '/../src/usuarios.php';
 
-$user = exigir_login();   // qualquer usuário ativo troca a própria senha
+$user = exigir_login();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     exigir_post_csrf('minha-senha.php');

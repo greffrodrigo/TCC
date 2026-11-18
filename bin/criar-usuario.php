@@ -1,11 +1,6 @@
 <?php
 declare(strict_types=1);
 
-/**
- * Cria (ou redefine a senha de) um usuário da página.
- * Uso: php bin/criar-usuario.php <login> "<Nome completo>" [ADMIN|LEITOR]
- * A senha é pedida no terminal.
- */
 if (PHP_SAPI !== 'cli') {
     http_response_code(404);
     exit;

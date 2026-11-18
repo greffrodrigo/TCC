@@ -16,7 +16,6 @@ if (!$cluster) {
     exit;
 }
 
-// Itens do cluster: o próprio cluster, seus nodes e as VMs/CTs de cada node (inclusive inativos)
 $todos = [(int)$cluster['id'] => ['id' => (int)$cluster['id'], 'iconf' => $cluster['iconf'], 'tipo' => 'CLUSTER',
     'chave_origem' => '', 'nome' => $cluster['nome'], 'pai_id' => null, 'ativo' => 1]];
 $st = $pdo->prepare('SELECT id, iconf, tipo, chave_origem, nome, pai_id, ativo FROM iconf_item WHERE pai_id = ?');
@@ -29,7 +28,6 @@ foreach ($nodes as $n) {
         $guests[(int)$n['id']][] = $g;
     }
 }
-// o item CLUSTER pode estar inativo: consulta o valor real
 $a = $pdo->prepare('SELECT ativo FROM iconf_item WHERE id = ?');
 $a->execute([$id]);
 $todos[$id]['ativo'] = (int)$a->fetchColumn();
@@ -49,7 +47,6 @@ foreach ($pdo->query("SELECT item_id, campo, valor FROM iconf_atributo WHERE ite
     $attr[(int)$r['item_id']][$r['campo']] = $r['valor'];
 }
 
-/** Protege contra injeção de fórmula no Excel e troca o ponto decimal por vírgula nos números. */
 function cel(?string $v, bool $numero = false): string
 {
     $v = (string)$v;
@@ -82,7 +79,7 @@ header('Content-Type: text/csv; charset=utf-8');
 header('Content-Disposition: attachment; filename="' . $arquivo . '"');
 header('Cache-Control: no-store');
 $out = fopen('php://output', 'w');
-fwrite($out, "\xEF\xBB\xBF");   // BOM: o Excel abre com acentos corretos
+fwrite($out, "\xEF\xBB\xBF");
 $sep = ';';
 fputcsv($out, ['ICONF', 'Tipo', 'Nome', 'ID (VMID)', 'Cluster', 'Node', 'Ativo', 'Status', 'vCPU', 'Memória (GB)',
     'Disco (GB)', 'Rede', 'Snapshots', 'Dias desligada', 'Versão PVE', 'Cores', 'RAM total (GB)'], $sep, '"', '');

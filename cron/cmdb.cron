@@ -1,4 +1,1 @@
-# CMDB - agendador das coletas. Copie para /etc/cron.d/cmdb (como root).
-# A programação (30 em 30 minutos ou uma vez ao dia) é definida na tela Ambientes;
-# esta linha só "acorda" o agendador a cada minuto.
 * * * * * www-data /usr/bin/php /var/www/cmdb/bin/agendador.php >> /var/lib/cmdb/agendador.log 2>&1

@@ -1,9 +1,6 @@
 <?php
 declare(strict_types=1);
 
-/**
- * Conexão PDO com o MariaDB e carga da configuração.
- */
 function cfg(): array
 {
     static $cfg = null;
@@ -28,7 +25,6 @@ function db(): PDO
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             PDO::ATTR_EMULATE_PREPARES   => false,
         ]);
-        // Mantém o horário do banco igual ao horário do PHP (só MariaDB/MySQL)
         if ($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql') {
             $off = (new DateTime('now'))->format('P');
             $pdo->exec("SET time_zone = '" . $off . "'");

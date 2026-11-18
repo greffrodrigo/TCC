@@ -14,9 +14,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $st = db()->prepare('SELECT id, nome, login, senha_hash, perfil, ativo FROM usuario WHERE login = ?');
         $st->execute([$login]);
         $u = $st->fetch();
-        // verifica sempre um hash para não revelar se o login existe
         $hash = $u['senha_hash'] ?? '$2y$10$usesomesillystringforsalt.invalidinvalidinvalidinvalidinv';
-        // usuário desativado não entra, mesmo com a senha certa (mesma mensagem de erro)
         if ($u && (int)$u['ativo'] === 1 && password_verify($senha, $hash)) {
             session_regenerate_id(true);
             $_SESSION['usuario'] = ['id' => (int)$u['id'], 'nome' => $u['nome'], 'perfil' => $u['perfil']];

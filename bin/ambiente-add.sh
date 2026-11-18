@@ -1,15 +1,4 @@
 #!/bin/bash
-# Cadastra (ou atualiza) um ambiente Proxmox em /etc/cmdb/ambientes/<slug>.env
-#
-# Uso (como root):
-#   sudo bin/ambiente-add.sh <slug> "<Nome do cluster>" <host> <usuario!token> [porta]
-# Exemplo:
-#   sudo bin/ambiente-add.sh 01-avato-dr "PVE AVATO DR" 10.0.0.10 'cmdb@pve!coleta'
-#
-# O segredo do token é pedido no terminal (não fica no histórico do shell).
-# A ordem da coleta é a ordem alfabética dos slugs: use prefixos (01-, 02-...) se importar.
-# O slug identifica o ambiente no banco e NÃO deve mudar depois; o nome pode ser alterado
-# a qualquer momento (editando AMBIENTE_NOME no arquivo).
 
 set -e
 
@@ -20,7 +9,19 @@ fi
 
 slug="$1"; nome="$2"; host="$3"; usuario="$4"; porta="${5:-8006}"
 if [[ -z "$slug" || -z "$nome" || -z "$host" || -z "$usuario" ]]; then
-    sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//' >&2
+    cat >&2 <<'USO'
+Cadastra (ou atualiza) um ambiente Proxmox em /etc/cmdb/ambientes/<slug>.env
+
+Uso (como root):
+  sudo bin/ambiente-add.sh <slug> "<Nome do cluster>" <host> <usuario!token> [porta]
+Exemplo:
+  sudo bin/ambiente-add.sh 01-avato-dr "PVE AVATO DR" 10.0.0.10 'cmdb@pve!coleta'
+
+O segredo do token é pedido no terminal (não fica no histórico do shell).
+A ordem da coleta é a ordem alfabética dos slugs: use prefixos (01-, 02-...) se importar.
+O slug identifica o ambiente no banco e NÃO deve mudar depois; o nome pode ser alterado
+a qualquer momento (editando AMBIENTE_NOME no arquivo).
+USO
     exit 1
 fi
 if [[ ! "$slug" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then

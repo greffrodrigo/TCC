@@ -25,7 +25,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         flash('ok', 'Ambiente cadastrado. Clique em "Coletar agora" na linha dele para fazer a primeira coleta.');
     } else {
         flash('erro', (string)$res);
-        // o segredo do token nunca volta ao formulário
         $_SESSION['old'] = array_diff_key($_POST, ['token' => 1, 'csrf' => 1]);
     }
     redirecionar('ambientes.php');
@@ -39,7 +38,7 @@ $deArquivo = array_values(array_filter(ambientes_de_arquivo(), fn($a) => !in_arr
 try {
     $agenda = agendamento_obter($pdo);
 } catch (Throwable) {
-    $agenda = null;   // tabela ainda não criada (falta rodar sql/migracao-v4.sql)
+    $agenda = null;
 }
 $fmt = fn(?string $d) => $d ? (new DateTime($d))->format('d/m/Y H:i:s') : '-';
 
@@ -205,10 +204,8 @@ cabecalho('Ambientes', $user, 'ambientes');
   function checa() {
     fetch('status.php', {cache: 'no-store'}).then(function (r) { return r.json(); }).then(function (s) {
       if (s.estado === 'executando') { trava(true); mostra(s.mensagem || 'Coleta em andamento'); return; }
-      // status antigo (de uma coleta anterior) logo após o clique: continua esperando
       if (inicio && s.atualizado_em && Date.parse(s.atualizado_em) < inicio - 2000 && esperas++ < 10) { return; }
       clearInterval(timer); timer = null; inicio = 0;
-      // recarrega: a coluna "Última coleta" mostra o resultado de cada ambiente
       mostra('Coleta finalizada. Atualizando a tela...');
       setTimeout(function () { location.reload(); }, 700);
     }).catch(function () {});
