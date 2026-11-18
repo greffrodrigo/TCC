@@ -78,6 +78,8 @@ final class Importador
     private PDO $pdo;
     private int $coletaId = 0;
     private int $clusterId = 0;   // cluster (ambiente) que está sendo importado
+    private ?int $janelaDesde = null;   // início da janela: geração da coleta anterior deste ambiente
+    private array $tarefasAtuais = [];  // tarefas de configuração da VM/CT em importação
     public int $criados = 0;
     public int $alterados = 0;
     public int $inativados = 0;
@@ -129,6 +131,8 @@ final class Importador
             $nomeConhecido = $nomeFixo !== '' ? $nomeFixo : $nomeApi;
             $clusterId = $this->garantirCluster($slug, $nomeConhecido);
             $this->clusterId = $clusterId;
+            $this->janelaDesde = $this->inicioJanela($clusterId);
+            $this->pdo->prepare('UPDATE coleta SET cluster_id = ? WHERE id = ?')->execute([$clusterId, $this->coletaId]);
             $vistos[$clusterId] = true;
             $this->lidos++;
 
@@ -166,6 +170,7 @@ final class Importador
                     $vistos[$gid] = true;
                     $this->lidos++;
 
+                    $this->tarefasAtuais = is_array($g['config_tasks'] ?? null) ? $g['config_tasks'] : [];
                     $this->gravarAtributos($gid, [
                         'node'         => $nodeNome,
                         'status'       => norm($g['status'] ?? null),
@@ -176,6 +181,7 @@ final class Importador
                         'snapshots'    => norm($g['snapshots'] ?? null),
                         'days_stopped' => norm($g['days_stopped'] ?? null),
                     ], CAMPOS_HISTORICO_GUEST);
+                    $this->tarefasAtuais = [];
                 }
             }
 
@@ -363,8 +369,46 @@ final class Importador
 
     private function historico(int $itemId, string $campo, ?string $ant, ?string $novo): void
     {
+        $autor = in_array($campo, ['vcpus', 'memory_gb', 'disk_gb', 'network'], true) && $ant !== null
+            ? $this->autorDaAlteracao() : null;
         $this->pdo->prepare(
-            'INSERT INTO iconf_historico (item_id, coleta_id, campo, valor_anterior, valor_novo) VALUES (?,?,?,?,?)'
-        )->execute([$itemId, $this->coletaId, $campo, $ant, $novo]);
+            'INSERT INTO iconf_historico (item_id, coleta_id, campo, valor_anterior, valor_novo, alterado_por) VALUES (?,?,?,?,?,?)'
+        )->execute([$itemId, $this->coletaId, $campo, $ant, $novo, $autor]);
+    }
+
+    /** Momento (epoch) em que a coleta anterior DESTE ambiente foi gerada; null se for a primeira. */
+    private function inicioJanela(int $clusterId): ?int
+    {
+        $st = $this->pdo->prepare(
+            'SELECT gerada_em FROM coleta WHERE cluster_id = ? AND id < ? AND gerada_em IS NOT NULL ORDER BY id DESC LIMIT 1'
+        );
+        $st->execute([$clusterId, $this->coletaId]);
+        $v = $st->fetchColumn();
+        return $v ? (new DateTime((string)$v))->getTimestamp() : null;
+    }
+
+    /**
+     * Usuário(s) das tarefas de configuração da VM/CT ocorridas desde a coleta anterior.
+     * Um usuário => o nome dele; vários => "a ou b (provável)"; nenhum => null (não identificado).
+     */
+    private function autorDaAlteracao(): ?string
+    {
+        if ($this->janelaDesde === null) {
+            return null;
+        }
+        $usuarios = [];
+        foreach ($this->tarefasAtuais as $t) {
+            $ts = (int)($t['starttime'] ?? 0);
+            $u = trim((string)($t['user'] ?? ''));
+            if ($u !== '' && $ts >= $this->janelaDesde - 120) {
+                $usuarios[$u] = true;
+            }
+        }
+        $lista = array_keys($usuarios);
+        if (!$lista) {
+            return null;
+        }
+        $txt = count($lista) === 1 ? $lista[0] : implode(' ou ', $lista) . ' (provável)';
+        return function_exists('mb_substr') ? mb_substr($txt, 0, 190, 'UTF-8') : substr($txt, 0, 190);
     }
 }

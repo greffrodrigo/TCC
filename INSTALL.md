@@ -101,6 +101,8 @@ Menu superior (só para o perfil ADMIN):
 ```bash
 # 1) tabela de ambientes e coluna "ativo" dos usuários (pode rodar mais de uma vez)
 sudo mariadb cmdb < sql/migracao-v2.sql
+sudo mariadb cmdb < sql/migracao-v3.sql   # coluna "Alterado por" do histórico
+sudo mariadb cmdb < sql/migracao-v4.sql   # agendamento das coletas
 # 2) chave de cifra dos tokens: gere e cole em config.php ('chave_cifra'); guarde uma cópia
 php -r 'echo base64_encode(random_bytes(32)), "\n";'
 # 3) o PHP precisa da extensão openssl (já vem no php-cli/php-fpm do Debian)
@@ -113,6 +115,28 @@ Instalação nova: `sql/schema.sql` já traz tudo; crie o primeiro admin com `ph
 ### Onde ficam os tokens
 
 Ambientes cadastrados na tela guardam o token **cifrado no banco**; a chave fica só no `config.php` (fora de `public/`, leitura restrita: `chmod 640 config.php; chown root:www-data config.php`). O token nunca é exibido de volta nem escrito em log; na coleta é decifrado num arquivo temporário modo 600 que é apagado logo após a consulta. Ordem de coleta: ambientes da tela, depois arquivos de `/etc/cmdb/ambientes` (slug que não esteja na tela), depois o legado `/etc/cmdb/proxmox.env`.
+
+### Quem alterou o recurso (coluna "Alterado por")
+
+No histórico de cada VM/CT, mudanças de vCPU, memória, disco e rede mostram o usuário do Proxmox que as fez. O coletor lê duas fontes: as tarefas da VM (`qmconfig`, `qmresize`, `vzconfig`...) e o **Log do cluster** do Proxmox (linhas `update VM <id>: ...`, onde a interface registra quem alterou CPU, memória, disco etc.). O importador associa as ocorridas desde a coleta anterior do mesmo ambiente.
+
+- Um usuário na janela: aparece o nome (ex.: `root@pam`). Mais de um: "ana@pve ou bob@pve (provável)". Nenhuma tarefa: "não identificado" (ex.: alteração feita por `qm set` direto no shell, ou tarefa já expirada no Proxmox).
+- É uma correlação por horário, não um log de auditoria. Só vale para mudanças detectadas a partir desta versão; o histórico antigo continua sem autor.
+- Exige a migração `sql/migracao-v3.sql`. O token já tem leitura das tarefas com PVEAuditor em `/`.
+
+## Agendamento das coletas (30 em 30 minutos ou uma vez ao dia)
+
+Na tela **Ambientes**, seção "Agendamento automático": escolha *Desligado*, *A cada 30 minutos* (em :00 e :30) ou *Uma vez ao dia, às HH:MM*. A programação fica no banco; **não é preciso mexer no cron para trocar o horário**. Salvar não dispara coleta na hora (use "Coletar todos"). Todos os ambientes ativos são coletados em sequência; se uma coleta ainda estiver rodando no horário seguinte, ele é tentado de novo no minuto seguinte.
+
+Instalação (uma vez, como root): uma linha fixa no cron que aciona o agendador a cada minuto:
+
+```bash
+sudo sh -c "cp /var/www/cmdb/cron/cmdb.cron /etc/cron.d/cmdb && chmod 644 /etc/cron.d/cmdb"
+# ou, equivalente:
+echo '* * * * * www-data /usr/bin/php /var/www/cmdb/bin/agendador.php >> /var/lib/cmdb/agendador.log 2>&1' | sudo tee /etc/cron.d/cmdb
+```
+
+Ajuste os caminhos se o site não estiver em `/var/www/cmdb`. A tela mostra a próxima coleta, a última automática e **avisa quando o agendador não está rodando** (cron não instalado ou parado). Log: `/var/lib/cmdb/agendador.log`. Se você já tinha uma linha de cron chamando `coletar.sh`, remova-a para não coletar em duplicidade.
 
 ## Como o CMDB funciona
 

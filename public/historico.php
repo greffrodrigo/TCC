@@ -21,7 +21,7 @@ $st->execute([$id]);
 $atuais = $st->fetchAll();
 
 $st = $pdo->prepare(
-    'SELECT h.id, h.coleta_id, h.campo, h.valor_anterior, h.valor_novo, h.registrado_em
+    'SELECT h.id, h.coleta_id, h.campo, h.valor_anterior, h.valor_novo, h.alterado_por, h.registrado_em
        FROM iconf_historico h WHERE h.item_id = ? ORDER BY h.id DESC LIMIT 500'
 );
 $st->execute([$id]);
@@ -83,10 +83,10 @@ $dt = fn(?string $s) => $s ? (new DateTime($s))->format('d/m/Y H:i:s') : '-';
     <div class="pad"><h3>Histórico de alterações</h3></div>
     <div class="table-wrap">
     <table>
-      <thead><tr><th>Data</th><th>Campo</th><th>Valor anterior</th><th>Novo valor</th><th>Coleta</th></tr></thead>
+      <thead><tr><th>Data</th><th>Campo</th><th>Valor anterior</th><th>Novo valor</th><th>Alterado por</th><th>Coleta</th></tr></thead>
       <tbody>
       <?php if (!$hist): ?>
-        <tr><td colspan="5" class="muted center">Sem registros.</td></tr>
+        <tr><td colspan="6" class="muted center">Sem registros.</td></tr>
       <?php endif; ?>
       <?php foreach ($hist as $r): ?>
         <tr>
@@ -94,6 +94,7 @@ $dt = fn(?string $s) => $s ? (new DateTime($s))->format('d/m/Y H:i:s') : '-';
           <td><?= h($rot($r['campo'])) ?></td>
           <td class="muted"><?= h($r['valor_anterior'] ?? '-') ?></td>
           <td><strong><?= h($r['valor_novo'] ?? '-') ?></strong></td>
+          <td class="muted"><?= h($r['alterado_por'] ?? (in_array($r['campo'], ['vcpus', 'memory_gb', 'disk_gb', 'network'], true) && $r['valor_anterior'] !== null ? 'não identificado' : '-')) ?></td>
           <td class="muted">#<?= (int)$r['coleta_id'] ?></td>
         </tr>
       <?php endforeach; ?>

@@ -324,11 +324,26 @@ json_add_node() {
         >> "$JSON_NODES_TMP"
 }
 
-# Uso: json_add_guest <tipo> <node> <id> <nome> <status> <mem_gb> <disk_gb> <vcpus> <net_status> <dias_parada> <snapshots>
+# === Quem alterou a configuração de uma VM/CT ===
+# Duas fontes, juntas num array JSON [{type,user,starttime}]:
+#  - tarefas do nó (qmconfig, qmresize, vzconfig, ...);
+#  - Log do cluster (aba "Log do cluster" do Proxmox): linhas "update VM <id>: ..." com o usuário.
+# CLUSTER_LOG é lido uma vez por coleta (cluster/log); se a API negar, só as tarefas são usadas.
+get_config_tasks() {
+    local node="$1" id="$2" t a b
+    t=$(api_get "nodes/$node/tasks?vmid=$id&limit=100&source=all")
+    a=$(echo "$t" | jq -c '[.data[]? | select((.type // "") | test("^(qmconfig|qmresize|vzconfig|vzresize|resize|qmmove|move_volume|qmrollback|vzrollback)$")) | {type: .type, user: .user, starttime: .starttime}]' 2>/dev/null) || a='[]'
+    [[ -n "$a" ]] || a='[]'
+    b=$(echo "$CLUSTER_LOG" | jq -c --arg id "$id" '[.data[]? | select((.msg // "") | test("^update (VM|CT) " + $id + ":")) | {type: "log", user: .user, starttime: .time}]' 2>/dev/null) || b='[]'
+    [[ -n "$b" ]] || b='[]'
+    jq -nc --argjson a "$a" --argjson b "$b" '($a + $b) | sort_by(.starttime) | reverse | .[0:40]' 2>/dev/null || echo '[]'
+}
+
+# Uso: json_add_guest <tipo> <node> <id> <nome> <status> <mem_gb> <disk_gb> <vcpus> <net_status> <dias_parada> <snapshots> [tarefas_json]
 json_add_guest() {
     jq -nc --arg type "$1" --arg node "$2" --arg id "$3" --arg name "$4" --arg state "$5" \
-        --arg mem "${6//,/.}" --arg disk "${7//,/.}" --arg vcpus "$8" --arg net "$9" --arg days "${10}" --arg snaps "${11}" \
-        "$JQ_PARSERS"'{type: $type, node: $node, id: ($id | tonumber), name: $name, status: $state, memory_gb: ($mem | tonumber), disk_gb: ($disk | tonumber), vcpus: ($vcpus | try tonumber catch $vcpus), network: ($net | net_list), days_stopped: ($days | try tonumber catch null), snapshots: ($snaps | try tonumber catch null)}' \
+        --arg mem "${6//,/.}" --arg disk "${7//,/.}" --arg vcpus "$8" --arg net "$9" --arg days "${10}" --arg snaps "${11}" --argjson tasks "${12:-[]}" \
+        "$JQ_PARSERS"'{type: $type, node: $node, id: ($id | tonumber), name: $name, status: $state, memory_gb: ($mem | tonumber), disk_gb: ($disk | tonumber), vcpus: ($vcpus | try tonumber catch $vcpus), network: ($net | net_list), days_stopped: ($days | try tonumber catch null), snapshots: ($snaps | try tonumber catch null), config_tasks: $tasks}' \
         >> "$JSON_GUESTS_TMP"
 }
 
@@ -338,6 +353,10 @@ echo "TYPE,NODE,ID,NAME,STATUS,MEMORY_GB,DISK_GB,VCPUS,NET_STATUS,DAYS_STOPPED,P
 # === Processa todos os nodes ===
 CLUSTER_NAME=$(get_cluster_name)
 nodes=$(api_get "nodes" | jq -r '.data[].node')
+
+# Log do cluster (uma vez): traz o usuário das alterações de configuração feitas pela interface
+CLUSTER_LOG=$(api_get "cluster/log?max=2000")
+[[ "$CLUSTER_LOG" == \{* ]] || CLUSTER_LOG='{}'
 
 # Sem nodes = API fora do ar ou token inválido: aborta sem gerar JSON vazio
 if [[ -z "$nodes" ]]; then
@@ -390,7 +409,7 @@ for NODE in $nodes; do
         # === Dias desligada ===
         days_stopped=$(get_stopped_days "$NODE" "qemu" "$VMID" "$state")
         snapshots=$(get_snapshot_count "$NODE" "qemu" "$VMID")
-        json_add_guest "VM" "$NODE" "$VMID" "$name" "$state" "$memory_gb" "$total_gb" "$vcpus" "$net_status" "$days_stopped" "$snapshots"
+        json_add_guest "VM" "$NODE" "$VMID" "$name" "$state" "$memory_gb" "$total_gb" "$vcpus" "$net_status" "$days_stopped" "$snapshots" "$(get_config_tasks "$NODE" "$VMID")"
 
         echo "VM,$NODE,$VMID,\"$name\",$state,$memory_gb,$total_gb,$vcpus,\"$net_status\",$days_stopped,\"$pve_version\",\"$disk_wearout\",\"$storage_free\"" >> "$CSV_FILE"
     done
@@ -423,7 +442,7 @@ for NODE in $nodes; do
         # === Dias desligado ===
         days_stopped=$(get_stopped_days "$NODE" "lxc" "$CTID" "$state")
         snapshots=$(get_snapshot_count "$NODE" "lxc" "$CTID")
-        json_add_guest "CT" "$NODE" "$CTID" "$name" "$state" "$memory_gb" "$total_gb" "$cpus" "$net_status" "$days_stopped" "$snapshots"
+        json_add_guest "CT" "$NODE" "$CTID" "$name" "$state" "$memory_gb" "$total_gb" "$cpus" "$net_status" "$days_stopped" "$snapshots" "$(get_config_tasks "$NODE" "$CTID")"
 
         echo "CT,$NODE,$CTID,\"$name\",$state,$memory_gb,$total_gb,$cpus,\"$net_status\",$days_stopped,\"$pve_version\",\"$disk_wearout\",\"$storage_free\"" >> "$CSV_FILE"
     done

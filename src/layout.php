@@ -65,6 +65,12 @@ function nav_html(array $user, string $ativo): string
     if (($user['perfil'] ?? '') === 'ADMIN') {
         $html .= $item('ambientes', 'ambientes.php', 'Ambientes') . $item('usuarios', 'usuarios.php', 'Usuários');
     }
+    // a caixa de pesquisa só aparece na tela CMDB (a página de resultados já tem a sua própria)
+    if ($ativo === 'cmdb' && basename((string)($_SERVER['SCRIPT_NAME'] ?? '')) === 'index.php') {
+        $html .= '<form class="busca" action="pesquisa.php" method="get" role="search">'
+            . '<input type="search" name="q" placeholder="Pesquisar ICONF, nome ou VMID" aria-label="Pesquisar ICONF" maxlength="60" value="' . h((string)($_GET['q'] ?? '')) . '">'
+            . '<button class="btn btn-sm" type="submit">&#128269; Pesquisar</button></form>';
+    }
     return $html . '</nav>';
 }
 

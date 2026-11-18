@@ -126,6 +126,7 @@ function status_html(?string $st, ?string $dias): string
         <strong><?= h($cl['nome']) ?></strong>
         <span class="iconf"><?= h($cl['iconf']) ?></span>
         <a class="btn btn-sm" href="historico.php?id=<?= $cl['id'] ?>">Histórico</a>
+        <a class="btn btn-sm" href="exportar.php?cluster=<?= (int)$cl['id'] ?>" title="Baixar os itens deste cluster em CSV (abre no Excel)">&#11015; CSV</a>
         <?php if ($ehAdmin && preg_match('/^[a-z0-9][a-z0-9_-]*$/', (string)$cl['chave_origem'])): ?>
           <button class="btn btn-sm btn-atualizar" type="button" data-amb="<?= h($cl['chave_origem']) ?>" title="Atualizar somente este ambiente">&#8635; Atualizar este ambiente</button>
         <?php endif; ?>
