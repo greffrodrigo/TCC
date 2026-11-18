@@ -1,13 +1,6 @@
 <?php
 declare(strict_types=1);
 
-/**
- * Apoio do coletar.sh aos ambientes cadastrados na tela (banco).
- *   php bin/ambientes.php listar                       slugs dos ambientes ATIVOS, na ordem de coleta
- *   php bin/ambientes.php env <slug>                   credenciais em formato de .env (usa a chave_cifra do config.php)
- *   php bin/ambientes.php resultado <slug> <estado> <mensagem>   grava o resultado da última coleta
- * Só funciona na linha de comando. O token nunca é impresso em log: "env" é redirecionado a um arquivo temporário 600.
- */
 if (PHP_SAPI !== 'cli') {
     http_response_code(404);
     exit;

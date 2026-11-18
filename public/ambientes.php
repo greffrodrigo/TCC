@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require __DIR__ . '/../src/layout.php';
 require __DIR__ . '/../src/ambientes.php';
+require __DIR__ . '/../src/agendamento.php';
 
 $user = exigir_admin();
 $pdo  = db();
@@ -10,6 +11,11 @@ $chaveOk = chave_cifra_ok();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     exigir_post_csrf('ambientes.php');
+    if (($_POST['acao'] ?? '') === 'agendamento') {
+        [$ok, $msg] = agendamento_salvar($pdo, (string)($_POST['modo'] ?? ''), (string)($_POST['hora'] ?? ''));
+        flash($ok ? 'ok' : 'erro', $msg);
+        redirecionar('ambientes.php');
+    }
     if (!$chaveOk) {
         flash('erro', "Defina 'chave_cifra' no config.php antes de cadastrar ambientes.");
         redirecionar('ambientes.php');
@@ -19,7 +25,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         flash('ok', 'Ambiente cadastrado. Clique em "Coletar agora" na linha dele para fazer a primeira coleta.');
     } else {
         flash('erro', (string)$res);
-        // o segredo do token nunca volta ao formulário
         $_SESSION['old'] = array_diff_key($_POST, ['token' => 1, 'csrf' => 1]);
     }
     redirecionar('ambientes.php');
@@ -30,6 +35,11 @@ unset($_SESSION['old']);
 $lista = ambientes_listar($pdo);
 $slugsBanco = array_column($lista, 'slug');
 $deArquivo = array_values(array_filter(ambientes_de_arquivo(), fn($a) => !in_array($a['slug'], $slugsBanco, true)));
+try {
+    $agenda = agendamento_obter($pdo);
+} catch (Throwable) {
+    $agenda = null;
+}
 $fmt = fn(?string $d) => $d ? (new DateTime($d))->format('d/m/Y H:i:s') : '-';
 
 cabecalho('Ambientes', $user, 'ambientes');
@@ -100,6 +110,51 @@ cabecalho('Ambientes', $user, 'ambientes');
   </div>
 </article>
 
+<article class="card pad agenda">
+  <?php if ($agenda === null): ?>
+    <div class="alert">A tabela de agendamento não existe. No servidor: <code>sudo mariadb cmdb &lt; sql/migracao-v4.sql</code></div>
+  <?php else:
+    $agora = new DateTime('now');
+    $prox = agendamento_proximo((string)$agenda['modo'], (string)$agenda['hora'], $agora);
+    $pulso = $agenda['ultimo_pulso'] ? new DateTime((string)$agenda['ultimo_pulso']) : null;
+    $vivo = $pulso && ($agora->getTimestamp() - $pulso->getTimestamp()) <= 180;
+    $appDir = realpath(__DIR__ . '/..') ?: '/var/www/cmdb';
+    $dataDir = rtrim((string)(cfg()['data_dir'] ?? '/var/lib/cmdb'), '/');
+  ?>
+    <form method="post" class="agenda-linha" autocomplete="off">
+      <?= csrf_campo() ?>
+      <input type="hidden" name="acao" value="agendamento">
+      <strong>Agendamento</strong>
+      <select name="modo" id="agModo" aria-label="Frequência da coleta automática">
+        <option value="desligado" <?= $agenda['modo'] === 'desligado' ? 'selected' : '' ?>>Desligado</option>
+        <option value="30min" <?= $agenda['modo'] === '30min' ? 'selected' : '' ?>>A cada 30 minutos</option>
+        <option value="diario" <?= $agenda['modo'] === 'diario' ? 'selected' : '' ?>>Uma vez ao dia</option>
+      </select>
+      <span id="agHora" class="agenda-hora" <?= $agenda['modo'] === 'diario' ? '' : 'hidden' ?>>às
+        <input type="time" name="hora" value="<?= h((string)$agenda['hora']) ?>" aria-label="Horário da coleta diária">
+      </span>
+      <button class="btn btn-sm btn-primary" type="submit" title="Salvar não dispara coleta na hora; use &quot;Coletar todos&quot;.">Salvar</button>
+      <span class="muted agenda-info" title="<?= h((string)$agenda['ultima_mensagem']) ?>">
+        Próxima: <strong><?= $prox ? h($prox->format('d/m H:i')) : '-' ?></strong>
+        &middot; Última: <?= $agenda['ultima_execucao'] ? h((new DateTime((string)$agenda['ultima_execucao']))->format('d/m H:i')) . ' (' . h((string)$agenda['ultimo_estado']) . ')' : '-' ?>
+      </span>
+    </form>
+    <?php if ($agenda['modo'] !== 'desligado' && !$vivo): ?>
+      <div class="alert agenda-aviso">
+        O agendador não está rodando no servidor (última atividade: <?= h($pulso ? $pulso->format('d/m/Y H:i:s') : 'nunca') ?>).
+        Instale uma vez, como root:
+        <pre class="code">echo '* * * * * www-data /usr/bin/php <?= h($appDir) ?>/bin/agendador.php &gt;&gt; <?= h($dataDir) ?>/agendador.log 2&gt;&amp;1' | sudo tee /etc/cron.d/cmdb</pre>
+      </div>
+    <?php endif; ?>
+    <script>
+      (function () {
+        var m = document.getElementById('agModo'), h = document.getElementById('agHora');
+        m.addEventListener('change', function () { h.hidden = (m.value !== 'diario'); });
+      })();
+    </script>
+  <?php endif; ?>
+</article>
+
 <article class="card pad">
   <h2 class="sec-title">Novo ambiente</h2>
   <form method="post" class="form-grid" autocomplete="off">
@@ -149,10 +204,8 @@ cabecalho('Ambientes', $user, 'ambientes');
   function checa() {
     fetch('status.php', {cache: 'no-store'}).then(function (r) { return r.json(); }).then(function (s) {
       if (s.estado === 'executando') { trava(true); mostra(s.mensagem || 'Coleta em andamento'); return; }
-      // status antigo (de uma coleta anterior) logo após o clique: continua esperando
       if (inicio && s.atualizado_em && Date.parse(s.atualizado_em) < inicio - 2000 && esperas++ < 10) { return; }
       clearInterval(timer); timer = null; inicio = 0;
-      // recarrega: a coluna "Última coleta" mostra o resultado de cada ambiente
       mostra('Coleta finalizada. Atualizando a tela...');
       setTimeout(function () { location.reload(); }, 700);
     }).catch(function () {});

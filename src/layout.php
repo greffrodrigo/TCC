@@ -1,9 +1,6 @@
 <?php
 declare(strict_types=1);
 
-/**
- * Cabeçalho/rodapé e utilitários comuns das telas de administração.
- */
 require_once __DIR__ . '/auth.php';
 
 function redirecionar(string $url): never
@@ -12,7 +9,6 @@ function redirecionar(string $url): never
     exit;
 }
 
-/** Mensagem exibida uma vez na próxima página. */
 function flash(string $tipo, string $msg): void
 {
     sessao();
@@ -35,7 +31,6 @@ function csrf_campo(): string
     return '<input type="hidden" name="csrf" value="' . h(csrf_token()) . '">';
 }
 
-/** Em POST, exige o token CSRF; senão volta à página com aviso. */
 function exigir_post_csrf(string $voltarPara): void
 {
     if (!csrf_valido($_POST['csrf'] ?? null)) {
@@ -64,6 +59,11 @@ function nav_html(array $user, string $ativo): string
     $html = '<nav class="nav">' . $item('cmdb', 'index.php', 'CMDB');
     if (($user['perfil'] ?? '') === 'ADMIN') {
         $html .= $item('ambientes', 'ambientes.php', 'Ambientes') . $item('usuarios', 'usuarios.php', 'Usuários');
+    }
+    if ($ativo === 'cmdb' && basename((string)($_SERVER['SCRIPT_NAME'] ?? '')) === 'index.php') {
+        $html .= '<form class="busca" action="pesquisa.php" method="get" role="search">'
+            . '<input type="search" name="q" placeholder="Pesquisar ICONF, nome ou VMID" aria-label="Pesquisar ICONF" maxlength="60" value="' . h((string)($_GET['q'] ?? '')) . '">'
+            . '<button class="btn btn-sm" type="submit">&#128269; Pesquisar</button></form>';
     }
     return $html . '</nav>';
 }

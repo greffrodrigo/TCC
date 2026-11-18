@@ -34,6 +34,7 @@ a:hover { text-decoration: underline; }
 .btn-primary { background: var(--blue); border-color: var(--blue); color: #fff; }
 .btn-danger-outline { color: var(--red); border-color: #f2c4c4; background: var(--red-bg); }
 .btn-sm { padding: 4px 12px; font-size: 13px; background: var(--blue-bg); border-color: var(--line); }
+.btn-primary.btn-sm { background: var(--blue); border-color: var(--blue); color: #fff; }
 
 .alert { background: var(--red-bg); border: 1px solid #f2c4c4; color: var(--red); border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; }
 .alert.info { background: var(--blue-bg); border-color: #c9dafc; color: var(--blue); }
@@ -98,7 +99,6 @@ tr.inativo td { opacity: .55; }
   .topbar { padding: 10px 12px; }
 }
 
-/* ---- navegação, formulários e telas de administração ---- */
 .topbar { flex-wrap: wrap; }
 .nav { display: flex; gap: 4px; margin-right: auto; margin-left: 28px; }
 .nav-link { padding: 7px 14px; border-radius: 8px; color: var(--muted); font-weight: 600; }
@@ -128,3 +128,18 @@ code { background: var(--bg); border: 1px solid var(--line); border-radius: 5px;
 .note { margin: 16px 0 0; font-size: 12px; }
 .card.narrow { max-width: 460px; }
 @media (max-width: 720px) { .nav { margin-left: 0; width: 100%; order: 3; } }
+
+.card.agenda { padding: 10px 16px; }
+.agenda-linha { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0; }
+.agenda-linha select, .agenda-linha input[type=time] { width: auto; min-width: 0; padding: 5px 8px; }
+.agenda-linha .btn { margin: 0; }
+.agenda-hora { display: inline-flex; align-items: center; gap: 6px; }
+.agenda-hora[hidden] { display: none; }
+.agenda-info { font-size: 12px; margin-left: auto; }
+.agenda-aviso { margin: 10px 0 0; }
+
+.busca { display: flex; gap: 6px; align-items: center; }
+.busca input[type=search] { width: 220px; padding: 6px 10px; }
+.nav .busca { margin-left: 14px; }
+.busca-grande input[type=search] { width: 100%; max-width: 420px; }
+@media (max-width: 720px) { .nav { flex-wrap: wrap; } .nav .busca { margin: 6px 0 0; width: 100%; } .busca input[type=search] { flex: 1; width: auto; } }

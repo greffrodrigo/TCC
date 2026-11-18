@@ -6,7 +6,6 @@ require_once __DIR__ . '/../src/layout.php';
 $user = exigir_login();
 $pdo  = db();
 
-// ---- Carrega itens e atributos (2 consultas) ----
 $itens = [];
 foreach ($pdo->query('SELECT id, iconf, tipo, chave_origem, nome, pai_id, ativo FROM iconf_item ORDER BY nome')->fetchAll() as $r) {
     $r['id'] = (int)$r['id'];
@@ -30,7 +29,6 @@ foreach ($itens as $it) {
         $guestsPorNode[$it['pai_id']][] = $it;
     }
 }
-// guests ordenados por ID numérico
 foreach ($guestsPorNode as &$lista) {
     usort($lista, fn($a, $b) => (int)$a['chave_origem'] <=> (int)$b['chave_origem']);
 }
@@ -41,13 +39,11 @@ $sincronizado = $ultima ? (new DateTime((string)$ultima))->format('d/m/Y, H:i:s'
 $titulo = cfg()['site_title'] ?? 'CMDB';
 $ehAdmin = ($user['perfil'] ?? '') === 'ADMIN';
 
-// Última tentativa de coleta falhou por ambiente inacessível? Mostra o aviso para todos.
 $avisoInacessivel = null;
 $arqStatus = (cfg()['data_dir'] ?? '') . '/status.json';
 if (is_readable($arqStatus)) {
     $js = json_decode((string)file_get_contents($arqStatus), true);
     $estadoUltima = is_array($js) ? ($js['estado'] ?? '') : '';
-    // inacessivel = todos os ambientes sem resposta; parcial = alguns ambientes falharam
     if (in_array($estadoUltima, ['inacessivel', 'parcial'], true)) {
         try {
             $quando = (new DateTime((string)($js['atualizado_em'] ?? 'now')))->format('d/m/Y H:i:s');
@@ -126,6 +122,7 @@ function status_html(?string $st, ?string $dias): string
         <strong><?= h($cl['nome']) ?></strong>
         <span class="iconf"><?= h($cl['iconf']) ?></span>
         <a class="btn btn-sm" href="historico.php?id=<?= $cl['id'] ?>">Histórico</a>
+        <a class="btn btn-sm" href="exportar.php?cluster=<?= (int)$cl['id'] ?>" title="Baixar os itens deste cluster em CSV (abre no Excel)">&#11015; CSV</a>
         <?php if ($ehAdmin && preg_match('/^[a-z0-9][a-z0-9_-]*$/', (string)$cl['chave_origem'])): ?>
           <button class="btn btn-sm btn-atualizar" type="button" data-amb="<?= h($cl['chave_origem']) ?>" title="Atualizar somente este ambiente">&#8635; Atualizar este ambiente</button>
         <?php endif; ?>
@@ -210,8 +207,8 @@ function status_html(?string $st, ?string $dias): string
   var msg = document.getElementById('msgColeta');
   var csrf = document.querySelector('meta[name="csrf"]').content;
   var timer = null;
-  var inicioColeta = 0;   // horário (do servidor) em que o clique iniciou a coleta
-  var esperas = 0;        // leituras de status ainda anteriores ao clique
+  var inicioColeta = 0;
+  var esperas = 0;
 
   function mostra(t, erro) {
     msg.hidden = false;
@@ -229,7 +226,6 @@ function status_html(?string $st, ?string $dias): string
           mostra(s.mensagem || 'Coleta em andamento');
           return;
         }
-        // status antigo (de uma coleta anterior) logo após o clique: continua esperando
         if (inicioColeta && s.atualizado_em && Date.parse(s.atualizado_em) < inicioColeta - 2000 && esperas++ < 10) {
           return;
         }
@@ -247,7 +243,6 @@ function status_html(?string $st, ?string $dias): string
           sessionStorage.removeItem('coletaPendente');
           mostra(s.mensagem || 'Ambiente Inacessível para coleta', true);
         } else if (s.estado === 'parcial') {
-          // alguns ambientes atualizaram, outros não: mostra o aviso e recarrega para exibir o que entrou
           sessionStorage.removeItem('coletaPendente');
           mostra('Coleta parcial. ' + (s.mensagem || ''), true);
           setTimeout(function () { location.reload(); }, 2500);
@@ -259,7 +254,6 @@ function status_html(?string $st, ?string $dias): string
       .catch(function () {});
   }
 
-  // amb vazio = todos os ambientes em sequência; com valor = só aquele ambiente
   function iniciar(amb) {
     trava(true);
     var corpo = new URLSearchParams();
@@ -281,7 +275,6 @@ function status_html(?string $st, ?string $dias): string
     b.addEventListener('click', function () { iniciar(b.getAttribute('data-amb') || ''); });
   });
 
-  // se já existe coleta rodando ao abrir a página, passa a acompanhar
   fetch('status.php', {cache: 'no-store'}).then(function (r) { return r.json(); }).then(function (s) {
     if (s.estado === 'executando') { try { sessionStorage.setItem('coletaPendente', '1'); } catch (e) {} timer = setInterval(checa, 3000); checa(); }
   }).catch(function () {});

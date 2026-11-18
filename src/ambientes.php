@@ -1,11 +1,6 @@
 <?php
 declare(strict_types=1);
 
-/**
- * Ambientes Proxmox cadastrados na tela.
- * O token é guardado CIFRADO (AES-256-GCM); a chave fica em config.php ('chave_cifra'),
- * nunca no banco. O token nunca é exibido de volta nem gravado em log.
- */
 require_once __DIR__ . '/db.php';
 
 const AMB_COLUNAS = 'id, slug, nome, host, porta, usuario_api, ordem, ativo, ultimo_estado, ultima_mensagem, ultima_coleta_em, criado_em, atualizado_em';
@@ -15,11 +10,6 @@ function comprimento(string $s): int
     return function_exists('mb_strlen') ? mb_strlen($s, 'UTF-8') : strlen($s);
 }
 
-// ---------------------------------------------------------------------------
-// Cifra do token
-// ---------------------------------------------------------------------------
-
-/** Chave de 32 bytes vinda do config.php (base64). */
 function chave_cifra(?string $b64 = null): string
 {
     $b64 ??= (string)(cfg()['chave_cifra'] ?? '');
@@ -64,11 +54,6 @@ function decifrar_token(string $cifrado, string $chave): string
     return $pt;
 }
 
-// ---------------------------------------------------------------------------
-// Validação
-// ---------------------------------------------------------------------------
-
-/** Limpa e tipa os campos vindos do formulário. */
 function ambiente_normalizar(array $in): array
 {
     return [
@@ -82,7 +67,6 @@ function ambiente_normalizar(array $in): array
     ];
 }
 
-/** @return string[] mensagens de erro (vazio = válido) */
 function ambiente_validar(array $d, bool $tokenObrigatorio): array
 {
     $e = [];
@@ -110,10 +94,6 @@ function ambiente_validar(array $d, bool $tokenObrigatorio): array
     }
     return $e;
 }
-
-// ---------------------------------------------------------------------------
-// Slug (identificador estável do ambiente)
-// ---------------------------------------------------------------------------
 
 function slug_de(string $nome): string
 {
@@ -145,11 +125,6 @@ function slug_unico(PDO $pdo, string $base): string
     throw new RuntimeException('Não foi possível gerar um identificador único para o ambiente.');
 }
 
-// ---------------------------------------------------------------------------
-// Consultas e gravação
-// ---------------------------------------------------------------------------
-
-/** Ambientes sem o token, na ordem de coleta. */
 function ambientes_listar(PDO $pdo, bool $apenasAtivos = false): array
 {
     $sql = 'SELECT ' . AMB_COLUNAS . ' FROM ambiente' . ($apenasAtivos ? ' WHERE ativo = 1' : '') . ' ORDER BY ordem, slug';
@@ -163,10 +138,6 @@ function ambiente_obter(PDO $pdo, int $id): ?array
     return $st->fetch() ?: null;
 }
 
-/**
- * Cadastra um ambiente.
- * @return array{0:bool,1:string|array} [true, ['id'=>..,'slug'=>..]] ou [false, "mensagem de erro"]
- */
 function ambiente_criar(PDO $pdo, array $entrada, string $chave): array
 {
     $d = ambiente_normalizar($entrada);
@@ -181,10 +152,6 @@ function ambiente_criar(PDO $pdo, array $entrada, string $chave): array
     return [true, ['id' => (int)$pdo->lastInsertId(), 'slug' => $slug]];
 }
 
-/**
- * Atualiza um ambiente. Token em branco = mantém o atual. O slug nunca muda.
- * @return array{0:bool,1:string}
- */
 function ambiente_atualizar(PDO $pdo, int $id, array $entrada, string $chave): array
 {
     if (!ambiente_obter($pdo, $id)) {
@@ -205,7 +172,6 @@ function ambiente_atualizar(PDO $pdo, int $id, array $entrada, string $chave): a
     return [true, 'Ambiente atualizado.'];
 }
 
-/** Registra o resultado da última coleta do ambiente (chamado pelo coletar.sh). */
 function ambiente_registrar_resultado(PDO $pdo, string $slug, string $estado, string $mensagem): void
 {
     if (!in_array($estado, ['ok', 'erro', 'inacessivel'], true)) {
@@ -216,16 +182,11 @@ function ambiente_registrar_resultado(PDO $pdo, string $slug, string $estado, st
         ->execute([$estado, $mensagem, date('Y-m-d H:i:s'), $slug]);
 }
 
-// ---------------------------------------------------------------------------
-// Entrega das credenciais ao coletor (shell)
-// ---------------------------------------------------------------------------
-
 function sh_quote(string $v): string
 {
     return "'" . str_replace("'", "'\\''", $v) . "'";
 }
 
-/** Conteúdo de um arquivo .env equivalente ao de /etc/cmdb/ambientes, a partir do banco. */
 function ambiente_env_texto(PDO $pdo, string $slug, string $chave): string
 {
     $st = $pdo->prepare('SELECT nome, host, porta, usuario_api, token_cifrado FROM ambiente WHERE slug = ? AND ativo = 1');
@@ -241,11 +202,6 @@ function ambiente_env_texto(PDO $pdo, string $slug, string $chave): string
         . 'PVE_TOKEN=' . sh_quote(decifrar_token((string)$a['token_cifrado'], $chave)) . "\n";
 }
 
-// ---------------------------------------------------------------------------
-// Ambientes ainda definidos por arquivo (somente leitura na tela)
-// ---------------------------------------------------------------------------
-
-/** @return array<int,array{slug:string,nome:string,host:string}> */
 function ambientes_de_arquivo(?string $dir = null): array
 {
     $dir ??= getenv('AMBIENTES_DIR') ?: '/etc/cmdb/ambientes';
@@ -260,7 +216,7 @@ function ambientes_de_arquivo(?string $dir = null): array
             if (preg_match('/^(AMBIENTE_NOME|PVE_HOST)=(.*)$/', $linha, $m)) {
                 $v = trim($m[2]);
                 $v = preg_replace('/^([\'"])(.*)\1$/', '$2', $v);
-                $v = preg_replace('/\\\\(.)/', '$1', (string)$v);   // barras de printf %q
+                $v = preg_replace('/\\\\(.)/', '$1', (string)$v);
                 if ($m[1] === 'AMBIENTE_NOME') {
                     $nome = (string)$v;
                 } else {

@@ -1,20 +1,8 @@
 <?php
 declare(strict_types=1);
 
-/**
- * Importa o JSON gerado pelo script de coleta do Proxmox para o CMDB.
- *
- * Regras:
- *  - Cluster, NODE e VM/CT viram itens individuais, cada um com um ICONF único.
- *  - Item novo na coleta => criado. Item conhecido => só as diferenças geram histórico.
- *  - Item que sumiu da coleta => marcado inativo (nunca removido).
- *  - Se um node não respondeu (pve_version = N/A) nada dele é alterado nem inativado.
- */
-
-// Campos que geram histórico quando mudam
 const CAMPOS_HISTORICO_NODE  = ['pve_version', 'cpu_cores', 'memory_total_gb', 'disk_wearout'];
 const CAMPOS_HISTORICO_GUEST = ['node', 'status', 'vcpus', 'memory_gb', 'disk_gb', 'network', 'snapshots'];
-// Campos guardados só como valor atual (mudam o tempo todo, geram ruído)
 const CAMPOS_VOLATEIS_NODE   = ['storage_free'];
 const CAMPOS_VOLATEIS_GUEST  = ['days_stopped'];
 
@@ -77,7 +65,9 @@ final class Importador
 {
     private PDO $pdo;
     private int $coletaId = 0;
-    private int $clusterId = 0;   // cluster (ambiente) que está sendo importado
+    private int $clusterId = 0;
+    private ?int $janelaDesde = null;
+    private array $tarefasAtuais = [];
     public int $criados = 0;
     public int $alterados = 0;
     public int $inativados = 0;
@@ -88,7 +78,6 @@ final class Importador
         $this->pdo = $pdo;
     }
 
-    /** @return array{coleta_id:int,criados:int,alterados:int,inativados:int,lidos:int} */
     public function importar(array $json, string $slug, ?string $clusterNomeFixo = null): array
     {
         $slug = trim($slug);
@@ -117,18 +106,16 @@ final class Importador
             $this->pdo->prepare('INSERT INTO coleta (gerada_em) VALUES (?)')->execute([$geradaEm]);
             $this->coletaId = (int)$this->pdo->lastInsertId();
 
-            $vistos = [];       // ids de itens vistos nesta coleta
-            $nodesFalha = [];   // ids de nodes que não responderam
+            $vistos = [];
+            $nodesFalha = [];
 
-            // ---- CLUSTER ----
-            // Cada ambiente tem um item CLUSTER próprio, identificado pelo slug (chave_origem).
-            // Precedência do nome: AMBIENTE_NOME do arquivo do ambiente > nome vindo da API >
-            // nome já gravado > o próprio slug. Mudou o nome => renomeia (mesmo ICONF).
             $nomeApi = trim((string)($json['cluster']['name'] ?? ''));
             $nomeFixo = trim((string)$clusterNomeFixo);
             $nomeConhecido = $nomeFixo !== '' ? $nomeFixo : $nomeApi;
             $clusterId = $this->garantirCluster($slug, $nomeConhecido);
             $this->clusterId = $clusterId;
+            $this->janelaDesde = $this->inicioJanela($clusterId);
+            $this->pdo->prepare('UPDATE coleta SET cluster_id = ? WHERE id = ?')->execute([$clusterId, $this->coletaId]);
             $vistos[$clusterId] = true;
             $this->lidos++;
 
@@ -143,7 +130,6 @@ final class Importador
 
                 $falhou = (($n['pve_version'] ?? 'N/A') === 'N/A');
                 if ($falhou) {
-                    // node sem resposta da API: não mexe nele nem nos seus filhos
                     $nodesFalha[$nodeId] = true;
                     continue;
                 }
@@ -166,6 +152,7 @@ final class Importador
                     $vistos[$gid] = true;
                     $this->lidos++;
 
+                    $this->tarefasAtuais = is_array($g['config_tasks'] ?? null) ? $g['config_tasks'] : [];
                     $this->gravarAtributos($gid, [
                         'node'         => $nodeNome,
                         'status'       => norm($g['status'] ?? null),
@@ -176,11 +163,10 @@ final class Importador
                         'snapshots'    => norm($g['snapshots'] ?? null),
                         'days_stopped' => norm($g['days_stopped'] ?? null),
                     ], CAMPOS_HISTORICO_GUEST);
+                    $this->tarefasAtuais = [];
                 }
             }
 
-            // ---- Itens que sumiram da coleta => inativos (nunca removidos) ----
-            // Só os itens DESTE ambiente: nodes do cluster e VMs/CTs desses nodes.
             $st = $this->pdo->prepare(
                 "SELECT i.id, i.pai_id, i.ativo FROM iconf_item i
                   WHERE (i.tipo = 'NODE' AND i.pai_id = ?)
@@ -194,7 +180,6 @@ final class Importador
                 if (isset($vistos[$id])) {
                     continue;
                 }
-                // filho de node que falhou: preserva
                 if ($r['pai_id'] !== null && isset($nodesFalha[(int)$r['pai_id']])) {
                     continue;
                 }
@@ -206,8 +191,6 @@ final class Importador
                 }
             }
 
-            // ---- Totais ----
-            // marca a última coleta em que cada item foi visto
             if ($vistos) {
                 $ids = implode(',', array_map('intval', array_keys($vistos)));
                 $this->pdo->exec("UPDATE iconf_item SET ultima_coleta_id = {$this->coletaId} WHERE id IN ($ids)");
@@ -233,11 +216,6 @@ final class Importador
         ];
     }
 
-    /**
-     * Item CLUSTER do ambiente (chave_origem = slug, que nunca muda).
-     * Sem nome conhecido (API não informou) mantém o nome atual, ou usa o slug ao criar;
-     * com nome conhecido e diferente, renomeia o item existente (ICONF preservado, histórico registrado).
-     */
     private function garantirCluster(string $slug, string $nomeConhecido): int
     {
         $st = $this->pdo->prepare("SELECT * FROM iconf_item WHERE tipo = 'CLUSTER' AND chave_origem = ? LIMIT 1");
@@ -266,11 +244,9 @@ final class Importador
         return $id;
     }
 
-    /** Localiza o item; cria (com novo ICONF) se não existir. Atualiza nome/pai/ativo se mudaram. */
     private function garantirItem(string $tipo, string $chave, string $nome, ?int $paiId): int
     {
         if ($tipo === 'VM' || $tipo === 'CT') {
-            // o vmid só é único dentro do ambiente: procura entre as VMs/CTs dos nodes deste cluster
             $st = $this->pdo->prepare(
                 "SELECT g.* FROM iconf_item g JOIN iconf_item n ON n.id = g.pai_id
                   WHERE g.tipo IN ('VM','CT') AND g.chave_origem = ? AND n.pai_id = ? LIMIT 1"
@@ -306,7 +282,6 @@ final class Importador
             $mudou = true;
         }
         if (($tipo === 'VM' || $tipo === 'CT') && (int)$item['pai_id'] !== (int)$paiId) {
-            // migração entre nodes: o histórico do campo "node" é gravado em gravarAtributos
             $this->pdo->prepare('UPDATE iconf_item SET pai_id = ? WHERE id = ?')->execute([$paiId, $id]);
             $mudou = true;
         }
@@ -321,11 +296,6 @@ final class Importador
         return $id;
     }
 
-    /**
-     * Grava atributos atuais; só os campos em $historizar geram linhas de histórico.
-     * @param array<string,?string> $novos
-     * @param string[] $historizar
-     */
     private function gravarAtributos(int $itemId, array $novos, array $historizar): void
     {
         $st = $this->pdo->prepare('SELECT campo, valor FROM iconf_atributo WHERE item_id = ?');
@@ -363,8 +333,41 @@ final class Importador
 
     private function historico(int $itemId, string $campo, ?string $ant, ?string $novo): void
     {
+        $autor = in_array($campo, ['vcpus', 'memory_gb', 'disk_gb', 'network'], true) && $ant !== null
+            ? $this->autorDaAlteracao() : null;
         $this->pdo->prepare(
-            'INSERT INTO iconf_historico (item_id, coleta_id, campo, valor_anterior, valor_novo) VALUES (?,?,?,?,?)'
-        )->execute([$itemId, $this->coletaId, $campo, $ant, $novo]);
+            'INSERT INTO iconf_historico (item_id, coleta_id, campo, valor_anterior, valor_novo, alterado_por) VALUES (?,?,?,?,?,?)'
+        )->execute([$itemId, $this->coletaId, $campo, $ant, $novo, $autor]);
+    }
+
+    private function inicioJanela(int $clusterId): ?int
+    {
+        $st = $this->pdo->prepare(
+            'SELECT gerada_em FROM coleta WHERE cluster_id = ? AND id < ? AND gerada_em IS NOT NULL ORDER BY id DESC LIMIT 1'
+        );
+        $st->execute([$clusterId, $this->coletaId]);
+        $v = $st->fetchColumn();
+        return $v ? (new DateTime((string)$v))->getTimestamp() : null;
+    }
+
+    private function autorDaAlteracao(): ?string
+    {
+        if ($this->janelaDesde === null) {
+            return null;
+        }
+        $usuarios = [];
+        foreach ($this->tarefasAtuais as $t) {
+            $ts = (int)($t['starttime'] ?? 0);
+            $u = trim((string)($t['user'] ?? ''));
+            if ($u !== '' && $ts >= $this->janelaDesde - 120) {
+                $usuarios[$u] = true;
+            }
+        }
+        $lista = array_keys($usuarios);
+        if (!$lista) {
+            return null;
+        }
+        $txt = count($lista) === 1 ? $lista[0] : implode(' ou ', $lista) . ' (provável)';
+        return function_exists('mb_substr') ? mb_substr($txt, 0, 190, 'UTF-8') : substr($txt, 0, 190);
     }
 }

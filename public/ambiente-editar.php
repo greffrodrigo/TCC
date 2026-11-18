@@ -23,7 +23,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     [$ok, $msg] = ambiente_atualizar($pdo, $id, $_POST, chave_cifra());
     flash($ok ? 'ok' : 'erro', $msg);
     if (!$ok) {
-        $_SESSION['old'] = array_diff_key($_POST, ['token' => 1, 'csrf' => 1]);   // o token nunca volta ao formulário
+        $_SESSION['old'] = array_diff_key($_POST, ['token' => 1, 'csrf' => 1]);
     }
     redirecionar($ok ? 'ambientes.php' : 'ambiente-editar.php?id=' . $id);
 }

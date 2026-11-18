@@ -1,12 +1,6 @@
 <?php
 declare(strict_types=1);
 
-/**
- * Importa o JSON de coleta de UM ambiente para o CMDB.
- * Uso: php bin/importar.php <arquivo.json> <slug-do-ambiente> ["Nome do cluster"]
- *   slug  = nome do arquivo do ambiente em /etc/cmdb/ambientes (sem .env); identifica o cluster no banco
- *   nome  = (opcional) força o nome do cluster; vem de AMBIENTE_NOME no arquivo do ambiente
- */
 if (PHP_SAPI !== 'cli') {
     http_response_code(404);
     exit;

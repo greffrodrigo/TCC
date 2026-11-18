@@ -20,7 +20,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     flash($ok ? 'ok' : 'erro', $msg);
     if (!$ok) {
-        $_SESSION['old'] = ['nome' => $nome, 'login' => $login, 'perfil' => $perfil];   // a senha nunca volta ao formulário
+        $_SESSION['old'] = ['nome' => $nome, 'login' => $login, 'perfil' => $perfil];
     }
     redirecionar('usuarios.php');
 }

@@ -1,11 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/**
- * Regras de cadastro de usuários da página.
- * Usuário não é removido: apenas desativado. Nunca pode faltar um ADMIN ativo.
- */
-require_once __DIR__ . '/ambientes.php';   // comprimento()
+require_once __DIR__ . '/ambientes.php';
 
 const PERFIS_VALIDOS = ['ADMIN', 'LEITOR'];
 const SENHA_MINIMA = 10;
@@ -22,7 +18,6 @@ function usuario_obter(PDO $pdo, int $id): ?array
     return $st->fetch() ?: null;
 }
 
-/** Quantidade de ADMIN ativos, opcionalmente ignorando um usuário. */
 function admins_ativos(PDO $pdo, ?int $exceto = null): int
 {
     $st = $pdo->prepare("SELECT COUNT(*) FROM usuario WHERE perfil = 'ADMIN' AND ativo = 1 AND id <> ?");
@@ -35,7 +30,6 @@ function usuario_erro_senha(string $senha): ?string
     return comprimento($senha) < SENHA_MINIMA ? 'A senha precisa ter pelo menos ' . SENHA_MINIMA . ' caracteres.' : null;
 }
 
-/** @return array{0:bool,1:string} */
 function usuario_criar(PDO $pdo, string $nome, string $login, string $senha, string $perfil): array
 {
     $nome = trim($nome);
@@ -66,10 +60,6 @@ function usuario_criar(PDO $pdo, string $nome, string $login, string $senha, str
     return [true, "Usuário '$login' cadastrado."];
 }
 
-/**
- * Atualiza nome, perfil, situação e (opcionalmente) a senha.
- * @return array{0:bool,1:string}
- */
 function usuario_atualizar(PDO $pdo, int $id, string $nome, string $perfil, bool $ativo, ?string $novaSenha, int $idLogado): array
 {
     $atual = usuario_obter($pdo, $id);
@@ -86,11 +76,9 @@ function usuario_atualizar(PDO $pdo, int $id, string $nome, string $perfil, bool
     if ($novaSenha !== null && $novaSenha !== '' && ($e = usuario_erro_senha($novaSenha))) {
         return [false, $e];
     }
-    // não se tranca para fora: não pode desativar nem rebaixar a si mesmo
     if ($id === $idLogado && (!$ativo || $perfil !== 'ADMIN')) {
         return [false, 'Você não pode desativar nem rebaixar o seu próprio usuário. Peça a outro administrador.'];
     }
-    // sempre precisa sobrar pelo menos um ADMIN ativo
     if (!($perfil === 'ADMIN' && $ativo) && admins_ativos($pdo, $id) === 0) {
         return [false, 'Precisa existir pelo menos um administrador ativo.'];
     }
@@ -104,7 +92,6 @@ function usuario_atualizar(PDO $pdo, int $id, string $nome, string $perfil, bool
     return [true, 'Usuário atualizado.'];
 }
 
-/** @return array{0:bool,1:string} */
 function usuario_trocar_senha(PDO $pdo, int $id, string $atual, string $nova): array
 {
     $st = $pdo->prepare('SELECT senha_hash FROM usuario WHERE id = ? AND ativo = 1');

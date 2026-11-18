@@ -1,15 +1,4 @@
 #!/bin/bash
-# Coleta e importa um ou mais ambientes Proxmox, EM SEQUÊNCIA (ordem alfabética dos arquivos).
-#
-# Uso:  coletar.sh            -> todos os ambientes de /etc/cmdb/ambientes/*.env
-#       coletar.sh <slug>     -> só o ambiente indicado (nome do arquivo sem .env)
-#
-# Chamado pelo botão "Atualizar Dados" da página ou pelo cron:
-#   */30 * * * *  www-data  /var/www/cmdb/bin/coletar.sh
-# Só uma execução roda por vez (flock). Se um ambiente falhar, o próximo continua.
-#
-# Compatibilidade: sem nenhum .env em /etc/cmdb/ambientes, usa /etc/cmdb/proxmox.env
-# como um único ambiente de slug "padrao".
 
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DATA_DIR="$(php -r '$c = require $argv[1]; echo $c["data_dir"];' "$APP_DIR/config.php")"
@@ -31,7 +20,7 @@ LOCK="$DATA_DIR/coleta.lock"
 STATUS="$DATA_DIR/status.json"
 LOG="$DATA_DIR/coleta.log"
 RES="$(mktemp)"
-ENVTMP=""   # arquivo temporário (modo 600) com as credenciais de um ambiente do banco
+ENVTMP=""
 trap 'rm -f "$RES" "$ENVTMP"' EXIT
 
 exec 9>"$LOCK"
@@ -42,16 +31,11 @@ fi
 
 INICIO="$(date -Iseconds)"
 
-# grava_status <estado> <mensagem>  (inclui o resultado de cada ambiente já processado)
 grava_status() {
     jq -n --arg e "$1" --arg m "$2" --arg i "$INICIO" --arg f "$(date -Iseconds)" --slurpfile r "$RES" \
         '{estado: $e, mensagem: $m, inicio: $i, atualizado_em: $f, ambientes: $r}' > "$STATUS.tmp" && mv "$STATUS.tmp" "$STATUS"
 }
 
-# ---- Lista de ambientes (slug + origem) ----
-# 1) cadastrados na tela (banco), ativos, na ordem definida ali      -> arquivo = "db"
-# 2) arquivos em /etc/cmdb/ambientes (se o slug não estiver no banco) -> ordem alfabética
-# 3) legado /etc/cmdb/proxmox.env, só se não houver nenhum outro       -> slug "padrao"
 SLUGS=(); ARQS=(); declare -A ORIGEM=()
 
 lista_db="$(php "$APP_DIR/bin/ambientes.php" listar 2>&1)"
@@ -63,7 +47,6 @@ if [[ $? -eq 0 ]]; then
         SLUGS+=("$s"); ARQS+=("db")
     done <<< "$lista_db"
 else
-    # banco indisponível ou tabela ainda não migrada: segue só com os arquivos
     echo "Aviso: não foi possível ler os ambientes do banco: $lista_db" >> "$LOG"
 fi
 
@@ -74,7 +57,7 @@ if compgen -G "$AMB_DIR/*.env" > /dev/null; then
             echo "Ignorando $f: nome do arquivo deve usar só minúsculas, números, _ e -" >> "$LOG"
             continue
         fi
-        [[ -n "${ORIGEM[$s]}" ]] && continue          # o cadastro da tela prevalece sobre o arquivo
+        [[ -n "${ORIGEM[$s]}" ]] && continue
         ORIGEM[$s]="arquivo"
         [[ -n "$FILTRO" && "$s" != "$FILTRO" ]] && continue
         SLUGS+=("$s"); ARQS+=("$f")
@@ -97,11 +80,9 @@ fi
 
 cd "$DATA_DIR" || exit 1
 
-# registra o resultado de um ambiente: resultado <slug> <rotulo> <estado> <mensagem>
 resultado() {
     jq -nc --arg s "$1" --arg n "$2" --arg e "$3" --arg m "$4" \
         '{slug: $s, nome: $n, estado: $e, mensagem: $m}' >> "$RES"
-    # ambiente da tela: guarda o resultado da última coleta dele (a tela Ambientes mostra)
     if [[ "${ORIGEM[$1]}" == "db" ]]; then
         php "$APP_DIR/bin/ambientes.php" resultado "$1" "$3" "$4" >> "$LOG" 2>&1
     fi
@@ -112,7 +93,6 @@ for idx in "${!SLUGS[@]}"; do
     slug="${SLUGS[$idx]}"; arq="${ARQS[$idx]}"; i=$((i + 1))
 
     if [[ "$arq" == "db" ]]; then
-        # ambiente cadastrado na tela: o token é decifrado só num arquivo temporário (modo 600)
         ENVTMP="$(mktemp)"; chmod 600 "$ENVTMP"
         if ! php "$APP_DIR/bin/ambientes.php" env "$slug" > "$ENVTMP" 2>> "$LOG"; then
             rm -f "$ENVTMP"; ENVTMP=""
@@ -126,7 +106,6 @@ for idx in "${!SLUGS[@]}"; do
         continue
     fi
 
-    # nome do ambiente (AMBIENTE_NOME do arquivo), lido em subshell para não vazar variáveis
     nome="$( ( source "$arq" >/dev/null 2>&1; printf '%s' "${AMBIENTE_NOME:-}" ) )"
     rotulo="${nome:-$slug}"
 
@@ -137,15 +116,12 @@ for idx in "${!SLUGS[@]}"; do
     saida_coleta="$(PVE_ENV_FILE="$arq" CSV_FILE="$slug.csv" "$APP_DIR/bin/consulta-api-proxmox.sh" 2>&1)"
     rc=$?
     echo "$saida_coleta" >> "$LOG"
-    # as credenciais temporárias não são mais necessárias
     if [[ -n "$ENVTMP" ]]; then rm -f "$ENVTMP"; ENVTMP=""; fi
 
     if [[ $rc -eq 4 ]]; then
-        # timeout de 60 s ou conexão perdida: nada é importado, dados anteriores ficam intactos
         resultado "$slug" "$rotulo" "inacessivel" "Ambiente Inacessível para coleta"
         continue
     elif [[ $rc -eq 5 ]]; then
-        # mostra o motivo exato impresso pelo script (última linha iniciada por ❌)
         motivo="$(printf '%s\n' "$saida_coleta" | grep '^❌' | tail -n 1 | sed 's/^❌ *//')"
         resultado "$slug" "$rotulo" "erro" "${motivo:-Permissões ou credenciais do Proxmox recusadas. Veja coleta.log}"
         continue
@@ -165,7 +141,6 @@ for idx in "${!SLUGS[@]}"; do
     fi
 done
 
-# ---- Status final ----
 FINAL="$(jq -s --argjson total "$TOTAL" '
     . as $r
     | ($r | map(select(.estado != "ok"))) as $f

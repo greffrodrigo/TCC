@@ -22,7 +22,6 @@ if (is_readable($f)) {
     }
 }
 
-// "executando" sem lock ativo = processo morreu no meio
 if (($estado['estado'] ?? '') === 'executando') {
     $fp = @fopen($dir . '/coleta.lock', 'c');
     if ($fp) {

@@ -26,7 +26,6 @@ if (!is_dir($dataDir)) {
     @mkdir($dataDir, 0750, true);
 }
 
-// Já tem coleta rodando? (o coletar.sh segura um flock no arquivo de lock)
 $fp = @fopen($dataDir . '/coleta.lock', 'c');
 if ($fp && !flock($fp, LOCK_EX | LOCK_NB)) {
     echo json_encode(['ok' => true, 'mensagem' => 'Já existe uma coleta em andamento']);
@@ -44,8 +43,6 @@ if (!$script) {
     exit;
 }
 
-// Dispara em segundo plano; a página acompanha por status.php
-// ambiente opcional: sem ele, atualiza todos em sequência
 $amb = trim((string)($_POST['ambiente'] ?? ''));
 if ($amb !== '' && !preg_match('/^[a-z0-9][a-z0-9_-]*$/', $amb)) {
     http_response_code(400);
